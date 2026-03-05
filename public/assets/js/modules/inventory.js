@@ -942,3 +942,4 @@ export async function renderInventory(outlet){
   await loadData();
   await draw();
 }
+
