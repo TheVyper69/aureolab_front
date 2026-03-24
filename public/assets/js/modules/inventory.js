@@ -1,6 +1,6 @@
 // public/assets/js/pages/inventory.js
 // INVENTORY (FULL)
-// - Modal crea/edita productos con payload NUEVO (FKs + sphere/cylinder)
+// - Modal crea/edita productos con payload NUEVO (FKs + sphere/cylinder/axis)
 // - Usa selects para: Type, Material, Supplier, Box
 // - Soporta imagen con preview a la derecha
 // - Muestra/oculta campos según categoría (MICAS / LENTES_CONTACTO / otros)
@@ -118,6 +118,132 @@ function appendIfNotNull(formData, key, value) {
   }
 }
 
+function setFieldError(inputId, errorId, message = '') {
+  const input = document.getElementById(inputId);
+  const error = document.getElementById(errorId);
+  if (!input || !error) return;
+
+  if (message) {
+    input.classList.add('is-invalid');
+    error.textContent = message;
+    error.classList.remove('d-none');
+  } else {
+    input.classList.remove('is-invalid');
+    error.textContent = '';
+    error.classList.add('d-none');
+  }
+}
+
+function clearLensErrors() {
+  setFieldError('cylinder', 'cylinderError', '');
+  setFieldError('axis', 'axisError', '');
+}
+
+function toggleAxisField() {
+  const cylinderEl = document.getElementById('cylinder');
+  const axisEl = document.getElementById('axis');
+  if (!cylinderEl || !axisEl) return;
+
+  const raw = String(cylinderEl.value || '').trim();
+
+  if (raw === '') {
+    axisEl.disabled = true;
+    axisEl.value = '';
+    setFieldError('axis', 'axisError', '');
+    return;
+  }
+
+  const num = Number(raw);
+  const hasValidNegativeCylinder = !Number.isNaN(num) && num < 0;
+
+  axisEl.disabled = !hasValidNegativeCylinder;
+
+  if (!hasValidNegativeCylinder) {
+    axisEl.value = '';
+    setFieldError('axis', 'axisError', '');
+  }
+}
+
+function enforceNegativeCylinder() {
+  const cylinderEl = document.getElementById('cylinder');
+  const axisEl = document.getElementById('axis');
+
+  if (!cylinderEl) return;
+
+  const raw = String(cylinderEl.value ?? '').trim();
+
+  if (raw === '') {
+    setFieldError('cylinder', 'cylinderError', '');
+    toggleAxisField();
+    return;
+  }
+
+  const num = Number(raw);
+
+  if (Number.isNaN(num)) {
+    setFieldError('cylinder', 'cylinderError', 'Valor inválido.');
+    toggleAxisField();
+    return;
+  }
+
+  if (num > 0) {
+    cylinderEl.value = '';
+    setFieldError('cylinder', 'cylinderError', 'No se permiten números positivos.');
+    toggleAxisField();
+    return;
+  }
+
+  if (num === 0) {
+    cylinderEl.value = '';
+    setFieldError('cylinder', 'cylinderError', 'El cilindro no puede ser 0. Debe ser negativo.');
+    if (axisEl) axisEl.value = '';
+    toggleAxisField();
+    return;
+  }
+
+  setFieldError('cylinder', 'cylinderError', '');
+  toggleAxisField();
+}
+
+function enforceAxisRange() {
+  const axisEl = document.getElementById('axis');
+  const cylinderEl = document.getElementById('cylinder');
+  if (!axisEl) return;
+
+  const axisRaw = String(axisEl.value ?? '').trim();
+  const cylinderRaw = String(cylinderEl?.value ?? '').trim();
+
+  if (axisRaw === '') {
+    setFieldError('axis', 'axisError', '');
+    return;
+  }
+
+  const axisNum = Number(axisRaw);
+  const cylinderNum = cylinderRaw === '' ? null : Number(cylinderRaw);
+
+  if (Number.isNaN(axisNum)) {
+    setFieldError('axis', 'axisError', 'Valor inválido.');
+    return;
+  }
+
+  if (axisNum < 0 || axisNum > 180) {
+    setFieldError('axis', 'axisError', 'El eje debe estar entre 0 y 180.');
+    return;
+  }
+
+  if (cylinderNum === null) {
+    setFieldError('axis', 'axisError', 'Si capturas eje debes capturar cilindro.');
+    return;
+  }
+
+  if (Number.isNaN(cylinderNum) || cylinderNum >= 0) {
+    setFieldError('axis', 'axisError', 'El eje solo aplica cuando el cilindro es negativo.');
+    return;
+  }
+
+  setFieldError('axis', 'axisError', '');
+}
+
 /* =========================
  * Normalización INVENTARIO
  * Soporta wrapper: [{ stock,reserved,available, product:{...}}]
@@ -161,6 +287,7 @@ function normalizeInventoryRows(rows) {
 
         sphere: (p.sphere ?? null),
         cylinder: (p.cylinder ?? null),
+        axis: (p.axis ?? null),
 
         imageUrl: p.imageUrl ?? p.image_url ?? null,
       }
@@ -376,19 +503,26 @@ export async function renderInventory(outlet) {
                         </select>
                       </div>
 
-                      <div class="col-md-6">
+                      <div class="col-md-4">
                         <label class="form-label">Esfera</label>
                         <input type="number" class="form-control" id="sphere" step="0.25" min="-40" max="40" placeholder="Ej: -2.00 o 1.25">
                       </div>
 
-                      <div class="col-md-6">
+                      <div class="col-md-4">
                         <label class="form-label">Cilindro</label>
                         <input type="number" class="form-control" id="cylinder" step="0.25" max="0" placeholder="Ej: -0.50">
+                        <span id="cylinderError" class="text-danger small d-none"></span>
+                      </div>
+
+                      <div class="col-md-4">
+                        <label class="form-label">Eje</label>
+                        <input type="number" class="form-control" id="axis" min="0" max="180" step="1" placeholder="Ej: 90">
+                        <span id="axisError" class="text-danger small d-none"></span>
                       </div>
 
                       <div class="col-12">
                         <div class="small text-muted">
-                          Type, Material, Supplier, Box, Esfera y Cilindro solo aplican para MICAS y LENTES_CONTACTO.
+                          Type, Material, Supplier, Box, Esfera, Cilindro y Eje solo aplican para MICAS y LENTES_CONTACTO.
                         </div>
                       </div>
 
@@ -518,6 +652,7 @@ export async function renderInventory(outlet) {
           previewObjectUrl = null;
         }
         setImagePreview(null);
+        clearLensErrors();
       });
     }
   };
@@ -587,11 +722,14 @@ export async function renderInventory(outlet) {
     lensSection.classList.toggle('d-none', !isLens);
 
     if (!isLens) {
-      ['lens_type_id', 'material_id', 'supplier_id', 'box_id', 'sphere', 'cylinder'].forEach(id => {
+      ['lens_type_id', 'material_id', 'supplier_id', 'box_id', 'sphere', 'cylinder', 'axis'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
       });
+      clearLensErrors();
     }
+
+    toggleAxisField();
   }
 
   const openProductModal = async (productOrNull) => {
@@ -615,6 +753,7 @@ export async function renderInventory(outlet) {
     document.getElementById('material_id').value = (p?.material_id ?? '');
     document.getElementById('sphere').value = (p?.sphere ?? '');
     document.getElementById('cylinder').value = (p?.cylinder ?? '');
+    document.getElementById('axis').value = (p?.axis ?? '');
 
     const sel = document.getElementById('category_id');
     sel.value = (p?.categoryId ?? p?.category_id ?? '');
@@ -625,8 +764,10 @@ export async function renderInventory(outlet) {
     }
 
     setImagePreview(null);
-
+    clearLensErrors();
     toggleLensSection();
+    enforceNegativeCylinder();
+    enforceAxisRange();
     productModal.show();
 
     if (p?.id) {
@@ -639,12 +780,32 @@ export async function renderInventory(outlet) {
 
     document.getElementById('category_id')?.addEventListener('change', toggleLensSection);
 
+    document.getElementById('cylinder')?.addEventListener('input', () => {
+      enforceNegativeCylinder();
+      enforceAxisRange();
+    });
+
+    document.getElementById('cylinder')?.addEventListener('blur', () => {
+      enforceNegativeCylinder();
+      enforceAxisRange();
+    });
+
+    document.getElementById('axis')?.addEventListener('input', () => {
+      enforceAxisRange();
+    });
+
+    document.getElementById('axis')?.addEventListener('blur', () => {
+      enforceAxisRange();
+    });
+
     document.getElementById('image')?.addEventListener('change', (e) => {
       const file = e.target?.files?.[0] || null;
       readImagePreview(file);
     });
 
     btnSave?.addEventListener('click', async () => {
+      clearLensErrors();
+
       const id = document.getElementById('productId').value || '';
 
       const sku = document.getElementById('sku').value.trim();
@@ -662,9 +823,35 @@ export async function renderInventory(outlet) {
       const material_id = (document.getElementById('material_id').value === '' ? null : Number(document.getElementById('material_id').value));
       const sphere = (document.getElementById('sphere').value === '' ? null : Number(document.getElementById('sphere').value));
       const cylinder = (document.getElementById('cylinder').value === '' ? null : Number(document.getElementById('cylinder').value));
+      const axis = (document.getElementById('axis').value === '' ? null : Number(document.getElementById('axis').value));
 
       if (cylinder !== null && cylinder > 0) {
-        Swal.fire('Dato inválido', 'cylinder debe ser <= 0', 'warning');
+        setFieldError('cylinder', 'cylinderError', 'No se permiten números positivos.');
+        return;
+      }
+
+      if (cylinder !== null && cylinder === 0) {
+        setFieldError('cylinder', 'cylinderError', 'El cilindro no puede ser 0. Debe ser negativo.');
+        return;
+      }
+
+      if (cylinder !== null && axis === null) {
+        setFieldError('axis', 'axisError', 'Si capturas cilindro debes capturar el eje.');
+        return;
+      }
+
+      if (axis !== null && cylinder === null) {
+        setFieldError('axis', 'axisError', 'Si capturas eje debes capturar cilindro.');
+        return;
+      }
+
+      if (axis !== null && (axis < 0 || axis > 180)) {
+        setFieldError('axis', 'axisError', 'El eje debe estar entre 0 y 180.');
+        return;
+      }
+
+      if (axis !== null && cylinder !== null && cylinder >= 0) {
+        setFieldError('axis', 'axisError', 'El eje solo aplica cuando el cilindro es negativo.');
         return;
       }
 
@@ -692,6 +879,7 @@ export async function renderInventory(outlet) {
       appendIfNotNull(formData, 'material_id', material_id);
       appendIfNotNull(formData, 'sphere', sphere);
       appendIfNotNull(formData, 'cylinder', cylinder);
+      appendIfNotNull(formData, 'axis', axis);
 
       if (imageFile) {
         formData.append('image', imageFile);

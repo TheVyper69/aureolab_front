@@ -62,8 +62,6 @@ CREATE TABLE IF NOT EXISTS order_item_treatments (
 ALTER TABLE inventory_movements
 MODIFY COLUMN movement_type ENUM('in','out','adjustment','reserve','unreserve') NOT NULL;
 
--- Lo hice en lap will
-
 ALTER TABLE products
 ADD COLUMN image_path VARCHAR(255) NULL AFTER image_mime;
 
@@ -79,3 +77,63 @@ MODIFY COLUMN movement_type ENUM('in','out','reserve','unreserve') NOT NULL;
 
 ALTER TABLE inventory_movements
 MODIFY COLUMN reference_type ENUM('manual','order','order_cancel') NOT NULL;
+
+-- se hizo en lap costa azul
+
+SELECT id, sku, name, sphere, cylinder, axis
+FROM products
+WHERE
+    cylinder = 0
+    OR (axis IS NOT NULL AND cylinder IS NULL)
+    OR (axis IS NOT NULL AND cylinder >= 0)
+    OR (axis < 0 OR axis > 180);
+
+SELECT id, sku, name, sphere, cylinder, axis
+FROM products
+WHERE
+    cylinder = 0
+    OR (axis IS NOT NULL AND cylinder IS NULL)
+    OR (axis IS NOT NULL AND cylinder >= 0)
+    OR (axis < 0 OR axis > 180);
+
+
+ALTER TABLE products
+ADD COLUMN axis INT NULL AFTER cylinder;
+
+UPDATE products
+SET axis = NULL
+WHERE axis IS NOT NULL
+  AND (cylinder IS NULL OR cylinder >= 0);
+
+  UPDATE products
+SET cylinder = NULL
+WHERE cylinder = 0;
+
+UPDATE products
+SET axis = NULL
+WHERE axis IS NOT NULL
+  AND (axis < 0 OR axis > 180);
+
+  SELECT id, sku, name, sphere, cylinder, axis
+FROM products
+WHERE
+    cylinder = 0
+    OR (axis IS NOT NULL AND cylinder IS NULL)
+    OR (axis IS NOT NULL AND cylinder >= 0)
+    OR (axis < 0 OR axis > 180);
+
+    ALTER TABLE products
+ADD CONSTRAINT chk_products_axis_range
+CHECK (axis IS NULL OR (axis >= 0 AND axis <= 180));
+
+ALTER TABLE products
+ADD CONSTRAINT chk_products_cylinder_negative
+CHECK (cylinder IS NULL OR cylinder < 0);
+
+ALTER TABLE products
+ADD CONSTRAINT chk_products_axis_cylinder_pair
+CHECK (
+  (axis IS NULL AND (cylinder IS NULL OR cylinder < 0))
+  OR
+  (axis IS NOT NULL AND cylinder IS NOT NULL AND cylinder < 0)
+);
