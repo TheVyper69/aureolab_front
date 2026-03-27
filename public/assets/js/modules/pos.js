@@ -1,5 +1,9 @@
 // public/assets/js/pages/pos.js
 // FULL - actualizado para imágenes protegidas y imageUrl absoluta/relativa
+// CAMBIOS VISUALES:
+// - Se quitaron los textos pequeños grises (small text-muted)
+// - No se tocó la lógica de negocio salvo lo mínimo necesario para ocultar esos textos
+// - Se dejaron comentarios donde se hicieron los cambios
 
 import { api } from '../services/api.js';
 import { money } from '../utils/helpers.js';
@@ -400,10 +404,10 @@ export async function renderPOS(outlet) {
       <div class="d-flex flex-wrap gap-3 align-items-center mt-3">
         ${
           isOptica
-            ? `<div class="small text-muted">Modo Óptica: sin descuentos</div>`
+            ? ``
             : `
               <div class="d-flex flex-wrap gap-2 align-items-center">
-                <label class="small text-muted m-0">Descuento</label>
+                <label class="m-0">Descuento</label>
 
                 <select id="discountMode" class="form-select form-select-sm" style="max-width:170px;">
                   <option value="order" selected>Por pedido total</option>
@@ -414,12 +418,13 @@ export async function renderPOS(outlet) {
                        class="form-control form-control-sm" style="max-width:110px;"
                        placeholder="%"
                 />
-                <span class="small text-muted" id="orderDiscountHint">Aplica a todo el pedido.</span>
+                <!-- Texto gris oculto, se deja el nodo por compatibilidad con la lógica -->
+                <span id="orderDiscountHint" class="d-none"></span>
               </div>
             `
         }
-        <div class="small text-muted">Stock crítico (disponible) = ≤ ${CRITICAL_STOCK}</div>
-        ${!token ? `<div class="small text-warning">⚠️ Sin token: no se cargarán imágenes protegidas.</div>` : ``}
+
+        <!-- Se quitaron los textos auxiliares grises de stock crítico y token -->
       </div>
     </div>
 
@@ -428,7 +433,7 @@ export async function renderPOS(outlet) {
         <div class="card p-3">
           <div class="d-flex align-items-center justify-content-between mb-2">
             <h6 class="mb-0">Productos</h6>
-            <div class="small text-muted" id="posCount"></div>
+            <div id="posCount"></div>
           </div>
           <div id="productsGrid" class="row g-3"></div>
         </div>
@@ -486,7 +491,7 @@ export async function renderPOS(outlet) {
               <option value="card">Tarjeta</option>
               <option value="transfer">Transferencia</option>
             </select>
-            <div class="small text-muted mt-1">*Si falla, revisa PAYMENT_METHOD_ID en pos.js</div>
+            <!-- Quitado texto gris de ayuda del método de pago -->
           </div>
 
           ${
@@ -497,7 +502,7 @@ export async function renderPOS(outlet) {
                   <div class="form-control bg-light" id="opticaCustomerBox">
                     ${safe(opticaUserContext.name || 'Óptica')}
                   </div>
-                  <div class="small text-muted mt-1">Se registrará automáticamente como cliente.</div>
+                  <!-- Quitado texto gris de ayuda del cliente -->
                 </div>
               `
               : `
@@ -508,7 +513,7 @@ export async function renderPOS(outlet) {
                   <div id="customerSuggest" class="list-group position-absolute w-100"
                        style="z-index:2000; display:none; max-height:240px; overflow:auto;">
                   </div>
-                  <div class="small text-muted mt-1">Empieza a escribir para ver sugerencias.</div>
+                  <!-- Quitado texto gris de ayuda del autocomplete -->
                 </div>
               `
           }
@@ -517,9 +522,8 @@ export async function renderPOS(outlet) {
             Crear pedido
           </button>
 
-          <div class="small text-muted mt-2" id="checkoutHint">
-            Agrega productos al carrito para habilitar el cobro.
-          </div>
+          <!-- Se deja el nodo pero oculto para no mover más la lógica -->
+          <div id="checkoutHint" class="d-none"></div>
         </div>
       </div>
     </div>
@@ -548,7 +552,9 @@ export async function renderPOS(outlet) {
   const setCheckoutState = () => {
     const empty = cart.length === 0;
     btnCheckout.disabled = empty;
-    checkoutHint.style.display = empty ? 'block' : 'none';
+
+    // Se quita la visualización del texto gris inferior
+    if (checkoutHint) checkoutHint.style.display = 'none';
   };
 
   const matchesFilter = (p) => {
@@ -571,8 +577,8 @@ export async function renderPOS(outlet) {
         <tr class="${av <= CRITICAL_STOCK ? 'table-warning' : ''}">
           <td>${safe(p.sku || '')}</td>
           <td>${safe(p.name || '')}</td>
-          <td class="small text-muted">${safe(getProductCategoryLabel(p) || '—')}</td>
-          <td class="small text-muted">${safe(p.type || '')}</td>
+          <td>${safe(getProductCategoryLabel(p) || '—')}</td>
+          <td>${safe(p.type || '')}</td>
           <td class="text-end fw-semibold">${st}</td>
           <td class="text-end">${rs}</td>
           <td class="text-end fw-semibold">${av}</td>
@@ -648,19 +654,19 @@ export async function renderPOS(outlet) {
                   ${safe(p.name)}
                 </div>
                 <div class="text-end">
-                  <div class="small text-muted">${safe(p.sku)}</div>
+                  <div>${safe(p.sku)}</div>
                   <div>${stockBadge(available)}</div>
                 </div>
               </div>
 
-              <div class="small text-muted mt-1">
+              <div class="mt-1">
                 ${getProductCategoryLabel(p) ? `<span class="me-2"><b>${safe(getProductCategoryLabel(p))}</b></span>` : ''}
                 ${p.type ? `<span>${safe(p.type)}</span>` : ''}
               </div>
 
               <div class="mt-2 d-flex align-items-center justify-content-between">
                 <div class="fw-bold">${money(p.salePrice ?? p.sale_price ?? 0)}</div>
-                <div class="small ${critical ? 'text-danger' : 'text-muted'}">
+                <div class="${critical ? 'text-danger' : ''}">
                   Disponible: <b>${available}</b>
                 </div>
               </div>
@@ -674,8 +680,8 @@ export async function renderPOS(outlet) {
 
               ${
                 available <= 0
-                  ? `<div class="small text-muted mt-2">Sin stock disponible</div>`
-                  : (critical ? `<div class="small text-danger mt-2">Stock crítico</div>` : ``)
+                  ? ``
+                  : (critical ? `<div class="mt-2 text-danger">Stock crítico</div>` : ``)
               }
             </div>
           </div>
@@ -699,17 +705,17 @@ export async function renderPOS(outlet) {
 
     const graduacionHtml =
       (catCode === 'MICAS' || catCode === 'LENTES CONTACTO')
-        ? `<div class="mt-3"><div class="fw-semibold">Graduación</div><div class="small text-muted">${fmtGrad(g)}</div></div>`
-        : `<div class="mt-3"><div class="fw-semibold">Graduación</div><div class="small text-muted">—</div></div>`;
+        ? `<div class="mt-3"><div class="fw-semibold">Graduación</div><div>${fmtGrad(g)}</div></div>`
+        : `<div class="mt-3"><div class="fw-semibold">Graduación</div><div>—</div></div>`;
 
     const biselHtml =
       (catCode === 'BISEL')
-        ? `<div class="mt-3"><div class="fw-semibold">Bisel</div><div class="small text-muted">${fmtBisel(b)}</div></div>`
-        : `<div class="mt-3"><div class="fw-semibold">Bisel</div><div class="small text-muted">—</div></div>`;
+        ? `<div class="mt-3"><div class="fw-semibold">Bisel</div><div>${fmtBisel(b)}</div></div>`
+        : `<div class="mt-3"><div class="fw-semibold">Bisel</div><div>—</div></div>`;
 
     const buyPriceHtml = isOptica ? '' : `
       <div class="col-6">
-        <div class="small text-muted">Precio compra</div>
+        <div>Precio compra</div>
         <div class="fw-semibold">${money(p.buyPrice ?? p.buy_price ?? 0)}</div>
       </div>
     `;
@@ -724,9 +730,9 @@ export async function renderPOS(outlet) {
           />
           <div style="min-width:0;">
             <div class="fw-bold">${safe(p.name)}</div>
-            <div class="small text-muted">${safe(p.sku)}</div>
+            <div>${safe(p.sku)}</div>
             <div class="mt-1">${stockBadge(available)}
-              <span class="small text-muted ms-2">
+              <span class="ms-2">
                 Disponible: <b>${available}</b> · Stock: ${totalStock} · Res: ${reserved}
               </span>
             </div>
@@ -738,25 +744,25 @@ export async function renderPOS(outlet) {
 
         <div class="row g-2">
           <div class="col-6">
-            <div class="small text-muted">Categoría</div>
+            <div>Categoría</div>
             <div class="fw-semibold">${safe(getProductCategoryLabel(p) || '—')}</div>
           </div>
           <div class="col-6">
-            <div class="small text-muted">Tipo</div>
+            <div>Tipo</div>
             <div class="fw-semibold">${safe(p.type || '—')}</div>
           </div>
 
           ${buyPriceHtml}
 
           <div class="col-6">
-            <div class="small text-muted">Proveedor</div>
+            <div>Proveedor</div>
             <div class="fw-semibold">${safe(p.supplier || '—')}</div>
           </div>
         </div>
 
         <div class="mt-3">
           <div class="fw-semibold">Descripción</div>
-          <div class="small text-muted">${desc ? safe(desc) : '—'}</div>
+          <div>${desc ? safe(desc) : '—'}</div>
         </div>
 
         ${graduacionHtml}
@@ -804,7 +810,7 @@ export async function renderPOS(outlet) {
     const arr = normalizeTreatments(it.treatments || []);
     if (!arr.length) return '';
     return `
-      <div class="small text-muted mt-1">
+      <div class="mt-1">
         Tratamientos: <b>${safe(arr.map(x => x.name || `#${x.id}`).join(', '))}</b>
       </div>
     `;
@@ -831,7 +837,7 @@ export async function renderPOS(outlet) {
       const itemDisc = isOptica ? '' : `
         <div class="mt-1 ${discountMode === 'item' ? '' : 'd-none'}" data-itemdiscbox="${it.cart_key}">
           <div class="d-flex align-items-center gap-2">
-            <span class="small text-muted">Desc %</span>
+            <span>Desc %</span>
             <input type="number" min="0" max="100"
               class="form-control form-control-sm"
               style="max-width:90px;"
@@ -847,9 +853,9 @@ export async function renderPOS(outlet) {
         <div class="d-flex justify-content-between border rounded p-2 mb-2">
           <div style="min-width:0;">
             <div class="fw-semibold">${safe(it.name)}</div>
-            <div class="small text-muted">${safe(it.sku)} · ${money(it.salePrice ?? it.sale_price ?? 0)} · Disponible: ${available}</div>
+            <div>${safe(it.sku)} · ${money(it.salePrice ?? it.sale_price ?? 0)} · Disponible: ${available}</div>
             ${treatmentsHtml(it)}
-            ${available <= CRITICAL_STOCK && available > 0 ? `<div class="small text-danger">Stock crítico</div>` : ``}
+            ${available <= CRITICAL_STOCK && available > 0 ? `<div class="text-danger">Stock crítico</div>` : ``}
             ${itemDisc}
           </div>
 
@@ -893,7 +899,7 @@ export async function renderPOS(outlet) {
           <label class="form-check-label" for="tr_${Number(t.id)}">
             ${safe(t.name || t.code || `Tratamiento ${t.id}`)}
           </label>
-          ${t.description ? `<div class="small text-muted ms-4">${safe(t.description)}</div>` : ''}
+          ${t.description ? `<div class="ms-4">${safe(t.description)}</div>` : ''}
         </div>
       `).join('');
 
@@ -1023,7 +1029,7 @@ export async function renderPOS(outlet) {
                   data-custid="${id ?? ''}"
                   data-idx="${idx}">
             <div class="fw-semibold">${safe(name || '(Sin nombre)')}</div>
-            ${meta ? `<div class="small text-muted">${safe(meta)}</div>` : ''}
+            ${meta ? `<div>${safe(meta)}</div>` : ''}
           </button>
         `;
       }).join('');
@@ -1139,11 +1145,12 @@ export async function renderPOS(outlet) {
     discountModeSel.addEventListener('change', () => {
       discountMode = discountModeSel.value === 'item' ? 'item' : 'order';
 
+      // Se conserva la lógica interna, aunque el texto ya no se muestre
       if (discountMode === 'order') {
-        orderDiscountHint.textContent = 'Aplica a todo el pedido.';
+        if (orderDiscountHint) orderDiscountHint.textContent = 'Aplica a todo el pedido.';
         orderDiscountInp.disabled = false;
       } else {
-        orderDiscountHint.textContent = 'Define descuento por cada producto en el carrito.';
+        if (orderDiscountHint) orderDiscountHint.textContent = 'Define descuento por cada producto en el carrito.';
         orderDiscountInp.disabled = true;
       }
 
