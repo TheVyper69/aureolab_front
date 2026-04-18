@@ -3,7 +3,7 @@ import { money } from '../utils/helpers.js';
 
 let salesCharts = [];
 
-// esto es una prueba 
+// esto es una prueba
 
 function destroyCharts() {
   for (const ch of salesCharts) {
