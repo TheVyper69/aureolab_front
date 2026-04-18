@@ -217,19 +217,11 @@ export async function renderPOS(outlet) {
       }, []);
   };
 
-  const treatmentIdsKey = (arr) => {
-    return normalizeTreatments(arr)
-      .map(x => x.id)
-      .sort((a, b) => a - b)
-      .join(',');
-  };
-
   const makeCartKey = (itemLike) => {
     const pid = Number(itemLike?.id ?? itemLike?.product_id ?? 0);
     const variantId = Number(itemLike?.variant_id ?? 0);
     const axis = itemLike?.axis ?? '';
-    const tKey = treatmentIdsKey(itemLike?.treatments ?? []);
-    return `${pid}::${variantId}::${axis}::${tKey}`;
+    return `${pid}::${variantId}::${axis}`;
   };
 
   const getCartQtyForProduct = (productId) =>
@@ -261,6 +253,7 @@ export async function renderPOS(outlet) {
         const p = r.product || {};
         return {
           ...p,
+          treatments: normalizeTreatments(p.treatments || []),
           category: p.category ?? p.category_name ?? getProductCategoryLabel(p),
           category_code: p.category_code ?? getProductCategoryCode(p),
           category_name: p.category_name ?? getProductCategoryLabel(p),
@@ -272,6 +265,7 @@ export async function renderPOS(outlet) {
     } else {
       products = (Array.isArray(prodData) ? prodData : []).map(p => ({
         ...p,
+        treatments: normalizeTreatments(p.treatments || []),
         category: p.category ?? p.category_name ?? getProductCategoryLabel(p),
         category_code: p.category_code ?? getProductCategoryCode(p),
         category_name: p.category_name ?? getProductCategoryLabel(p),
@@ -283,7 +277,8 @@ export async function renderPOS(outlet) {
     DBG('products loaded', products.map(p => ({
       id: p.id,
       name: p.name,
-      imageUrl: p.imageUrl
+      imageUrl: p.imageUrl,
+      treatments: p.treatments
     })));
   }
 
@@ -292,7 +287,7 @@ export async function renderPOS(outlet) {
     try {
       const { data } = await api.get('/opticas');
       customers = Array.isArray(data) ? data : [];
-    } catch (e) {
+    } catch (_e) {
       customers = [];
     }
   }
@@ -312,7 +307,7 @@ export async function renderPOS(outlet) {
 
       const box = outlet.querySelector('#opticaCustomerBox');
       if (box) box.textContent = opticaUserContext.name || 'Óptica';
-    } catch (e) {
+    } catch (_e) {
       opticaUserContext = { id: null, name: null, optica_id: null };
     }
   }
@@ -617,6 +612,16 @@ export async function renderPOS(outlet) {
     ensureDataTable();
   }
 
+  const treatmentsHtmlBlock = (arr) => {
+    const rows = normalizeTreatments(arr || []);
+    if (!rows.length) return '';
+    return `
+      <div class="small text-muted mt-1">
+        Tratamientos: <b>${safe(rows.map(x => x.name || `#${x.id}`).join(', '))}</b>
+      </div>
+    `;
+  };
+
   const renderCards = async () => {
     const filtered = (products || []).filter(matchesFilter);
     countEl.textContent = `${filtered.length} producto(s)`;
@@ -663,6 +668,8 @@ export async function renderPOS(outlet) {
                 ${getProductCategoryLabel(p) ? `<span class="me-2"><b>${safe(getProductCategoryLabel(p))}</b></span>` : ''}
                 ${p.type ? `<span>${safe(p.type)}</span>` : ''}
               </div>
+
+              ${treatmentsHtmlBlock(p.treatments)}
 
               <div class="mt-2 d-flex align-items-center justify-content-between">
                 <div class="fw-bold">${money(p.salePrice ?? p.sale_price ?? 0)}</div>
@@ -720,6 +727,22 @@ export async function renderPOS(outlet) {
       </div>
     `;
 
+    const treatmentsHtml = normalizeTreatments(p.treatments || []).length
+      ? `
+        <div class="mt-3">
+          <div class="fw-semibold">Tratamientos</div>
+          <div class="small text-muted">
+            ${safe(normalizeTreatments(p.treatments || []).map(x => x.name || `#${x.id}`).join(', '))}
+          </div>
+        </div>
+      `
+      : `
+        <div class="mt-3">
+          <div class="fw-semibold">Tratamientos</div>
+          <div class="small text-muted">—</div>
+        </div>
+      `;
+
     const html = `
       <div class="text-start">
         <div class="d-flex gap-3 align-items-start">
@@ -765,6 +788,7 @@ export async function renderPOS(outlet) {
           <div>${desc ? safe(desc) : '—'}</div>
         </div>
 
+        ${treatmentsHtml}
         ${graduacionHtml}
         ${biselHtml}
       </div>
@@ -938,25 +962,13 @@ export async function renderPOS(outlet) {
       return false;
     }
 
-    let selectedTreatments = [];
-
-    if (isOptica && isMicaProduct(p)) {
-      const picked = await selectTreatmentsForProduct(p);
-
-      if (picked === null) {
-        return false;
-      }
-
-      selectedTreatments = picked;
-    }
-
     const baseItem = {
       ...p,
       salePrice: p.salePrice ?? p.sale_price ?? 0,
       buyPrice: p.buyPrice ?? p.buy_price ?? 0,
       qty: 1,
       itemDiscountPct: 0,
-      treatments: selectedTreatments,
+      treatments: normalizeTreatments(p.treatments || []),
     };
 
     const cart_key = makeCartKey(baseItem);
@@ -1018,7 +1030,7 @@ export async function renderPOS(outlet) {
     };
 
     const renderList = (matches) => {
-      box.innerHTML = matches.map((c, idx) => {
+      box.innerHTML = matches.map((c) => {
         const id = getId(c);
         const name = getName(c);
         const meta = getMeta(c);
@@ -1026,8 +1038,7 @@ export async function renderPOS(outlet) {
         return `
           <button type="button"
                   class="list-group-item list-group-item-action"
-                  data-custid="${id ?? ''}"
-                  data-idx="${idx}">
+                  data-custid="${id ?? ''}">
             <div class="fw-semibold">${safe(name || '(Sin nombre)')}</div>
             ${meta ? `<div>${safe(meta)}</div>` : ''}
           </button>
@@ -1089,7 +1100,7 @@ export async function renderPOS(outlet) {
     if (catBtn) {
       selectedCategory = String(catBtn.dataset.cat || 'ALL');
       renderCategoryButtons();
-      renderCards();
+      await renderCards();
       return;
     }
 
@@ -1136,9 +1147,9 @@ export async function renderPOS(outlet) {
     }
   });
 
-  outlet.querySelector('#posSearch')?.addEventListener('input', (e) => {
+  outlet.querySelector('#posSearch')?.addEventListener('input', async (e) => {
     searchQuery = String(e.target.value || '');
-    renderCards();
+    await renderCards();
   });
 
   if (!isOptica) {
@@ -1233,8 +1244,7 @@ export async function renderPOS(outlet) {
         item_discount_type,
         item_discount_value,
         axis: it.axis ?? null,
-        item_notes: it.item_notes ?? null,
-        treatments: normalizeTreatments(it.treatments || []).map(x => x.id),
+        item_notes: it.item_notes ?? null
       };
     });
 
@@ -1292,4 +1302,4 @@ export async function renderPOS(outlet) {
   }
 
   DBG('renderPOS end');
-}
+} 

@@ -1,6 +1,6 @@
 // public/assets/js/pages/inventory.js
 // INVENTORY (FULL)
-// - Modal crea/edita productos con payload NUEVO (FKs + sphere/cylinder/axis)
+// - Modal crea/edita productos con payload NUEVO (FKs + sphere/cylinder/axis + treatments[])
 // - Usa selects para: Type, Material, Supplier, Box
 // - Soporta imagen con preview a la derecha
 // - Muestra/oculta campos según categoría (MICAS / LENTES_CONTACTO / otros)
@@ -139,6 +139,29 @@ function clearLensErrors() {
   setFieldError('axis', 'axisError', '');
 }
 
+/* =========================
+ * Tratamientos
+ * ========================= */
+function normalizeTreatmentsArray(arr) {
+  return (Array.isArray(arr) ? arr : [])
+    .map(t => {
+      if (typeof t === 'object' && t !== null) {
+        return {
+          id: Number(t.id || 0),
+          name: String(t.name || t.code || `Tratamiento ${t.id || ''}`).trim()
+        };
+      }
+      return {
+        id: Number(t || 0),
+        name: ''
+      };
+    })
+    .filter(t => t.id > 0);
+}
+
+/* =========================
+ * Validación graduación
+ * ========================= */
 function toggleAxisField() {
   const cylinderEl = document.getElementById('cylinder');
   const axisEl = document.getElementById('axis');
@@ -289,6 +312,8 @@ function normalizeInventoryRows(rows) {
         cylinder: (p.cylinder ?? null),
         axis: (p.axis ?? null),
 
+        treatments: normalizeTreatmentsArray(p.treatments ?? []),
+
         imageUrl: p.imageUrl ?? p.image_url ?? null,
       }
     };
@@ -313,6 +338,7 @@ export async function renderInventory(outlet) {
   let materials = [];
   let suppliers = [];
   let boxes = [];
+  let treatmentsCatalog = [];
 
   let productModal = null;
   let previewObjectUrl = null;
@@ -342,6 +368,156 @@ export async function renderInventory(outlet) {
       console.error('No se pudo cargar preview protegida:', err);
       setImagePreview(null);
     }
+  }
+
+  function buildTreatmentSelectHtml(selectedId = '') {
+    const normalizedSelected = String(selectedId || '');
+
+    return `
+      <div class="treatment-item position-relative border rounded p-2 mb-2"
+           style="transition: box-shadow .15s ease;">
+        <button
+          type="button"
+          class="btn btn-sm btn-danger treatment-remove"
+          title="Quitar tratamiento"
+          style="
+            position:absolute;
+            top:-8px;
+            right:-8px;
+            width:24px;
+            height:24px;
+            padding:0;
+            line-height:1;
+            border-radius:50%;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:14px;
+            opacity:0;
+            pointer-events:none;
+            transition:opacity .15s ease;
+            z-index:5;
+          ">
+          ×
+        </button>
+
+        <label class="form-label mb-1">Tratamiento</label>
+        <select class="form-select treatment-select" data-selected="${safe(normalizedSelected)}"></select>
+      </div>
+    `;
+  }
+
+  function getTreatmentsContainer() {
+    return document.getElementById('treatmentsContainer');
+  }
+
+  function getSelectedTreatmentIds() {
+    return Array.from(document.querySelectorAll('.treatment-select'))
+      .map(el => Number(el.value || 0))
+      .filter(v => v > 0);
+  }
+
+  function getSelectedTreatmentIdsExcluding(currentSelect = null) {
+    return Array.from(document.querySelectorAll('.treatment-select'))
+      .filter(el => el !== currentSelect)
+      .map(el => Number(el.value || 0))
+      .filter(v => v > 0);
+  }
+
+  function fillTreatmentSelectOptions(selectEl, selectedId = '') {
+    if (!selectEl) return;
+
+    const currentId = Number(selectedId || selectEl.value || 0) || 0;
+    const usedIds = getSelectedTreatmentIdsExcluding(selectEl);
+
+    const available = (Array.isArray(treatmentsCatalog) ? treatmentsCatalog : []).filter(t => {
+      const tid = Number(t.id || 0);
+      if (!tid) return false;
+      if (tid === currentId) return true;
+      return !usedIds.includes(tid);
+    });
+
+    selectEl.innerHTML = `
+      <option value="">-- Selecciona tratamiento --</option>
+      ${available.map(t => `
+        <option value="${safe(t.id)}" ${Number(t.id) === currentId ? 'selected' : ''}>
+          ${safe(t.name || t.code || `Tratamiento ${t.id}`)}
+        </option>
+      `).join('')}
+    `;
+  }
+
+  function refreshAllTreatmentSelectOptions() {
+    document.querySelectorAll('.treatment-select').forEach(selectEl => {
+      const currentValue = selectEl.value || selectEl.dataset.selected || '';
+      fillTreatmentSelectOptions(selectEl, currentValue);
+      selectEl.dataset.selected = selectEl.value || '';
+    });
+  }
+
+  function renderInitialTreatmentSelects(treatments = []) {
+    const container = getTreatmentsContainer();
+    if (!container) return;
+
+    const rows = normalizeTreatmentsArray(treatments);
+    container.innerHTML = '';
+
+    if (!rows.length) {
+      refreshAllTreatmentSelectOptions();
+      return;
+    }
+
+    rows.forEach(t => {
+      container.insertAdjacentHTML('beforeend', buildTreatmentSelectHtml(t.id));
+    });
+
+    refreshAllTreatmentSelectOptions();
+  }
+
+  function addTreatmentSelect(selectedId = '') {
+    const container = getTreatmentsContainer();
+    if (!container) return;
+
+    if (!Array.isArray(treatmentsCatalog) || treatmentsCatalog.length === 0) {
+      Swal.fire('Sin tratamientos', 'No hay tratamientos disponibles para seleccionar.', 'info');
+      return;
+    }
+
+    const usedIds = getSelectedTreatmentIds();
+    const remaining = treatmentsCatalog.filter(t => !usedIds.includes(Number(t.id || 0)));
+
+    if (!selectedId && remaining.length === 0) {
+      Swal.fire('Sin más opciones', 'Ya agregaste todos los tratamientos disponibles.', 'info');
+      return;
+    }
+
+    container.insertAdjacentHTML('beforeend', buildTreatmentSelectHtml(selectedId));
+    refreshAllTreatmentSelectOptions();
+  }
+
+  function validateTreatmentDuplicates() {
+    const ids = getSelectedTreatmentIds();
+    const dup = ids.find((id, idx) => ids.indexOf(id) !== idx);
+
+    document.querySelectorAll('.treatment-select').forEach(el => {
+      el.classList.remove('is-invalid');
+    });
+
+    if (!dup) return true;
+
+    let markedFirst = false;
+    document.querySelectorAll('.treatment-select').forEach(el => {
+      if (Number(el.value || 0) === dup) {
+        el.classList.add('is-invalid');
+        markedFirst = true;
+      }
+    });
+
+    if (markedFirst) {
+      Swal.fire('Tratamiento repetido', 'No puedes agregar el mismo tratamiento más de una vez.', 'warning');
+    }
+
+    return false;
   }
 
   const renderShell = () => {
@@ -529,6 +705,26 @@ export async function renderInventory(outlet) {
                     </div>
                   </div>
 
+                  <div id="treatmentsSection" class="col-12 d-none">
+                    <hr class="my-2">
+                    <div class="row g-2 mt-0">
+                      <div class="col-12">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                          <label class="form-label mb-0">Tratamientos</label>
+                          <button type="button" class="btn btn-sm btn-outline-brand" id="btnAddTreatment">
+                            Agregar tratamiento
+                          </button>
+                        </div>
+
+                        <div id="treatmentsContainer" class="mt-2"></div>
+
+                        <div class="small text-muted mt-1">
+                          Solo aplica para MICAS. No repitas tratamientos.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div class="col-12">
                     <hr class="my-2">
                     <div class="row g-3 align-items-start">
@@ -653,6 +849,9 @@ export async function renderInventory(outlet) {
         }
         setImagePreview(null);
         clearLensErrors();
+
+        const container = getTreatmentsContainer();
+        if (container) container.innerHTML = '';
       });
     }
   };
@@ -713,6 +912,7 @@ export async function renderInventory(outlet) {
     const code = pickCategoryCode(cat);
 
     const lensSection = document.getElementById('lensSection');
+    const treatmentsSection = document.getElementById('treatmentsSection');
     if (!lensSection) return;
 
     const isMicas = (code === 'MICAS');
@@ -720,6 +920,9 @@ export async function renderInventory(outlet) {
     const isLens = isMicas || isContacts;
 
     lensSection.classList.toggle('d-none', !isLens);
+    if (treatmentsSection) {
+      treatmentsSection.classList.toggle('d-none', !isMicas);
+    }
 
     if (!isLens) {
       ['lens_type_id', 'material_id', 'supplier_id', 'box_id', 'sphere', 'cylinder', 'axis'].forEach(id => {
@@ -727,6 +930,11 @@ export async function renderInventory(outlet) {
         if (el) el.value = '';
       });
       clearLensErrors();
+    }
+
+    if (!isMicas) {
+      const container = getTreatmentsContainer();
+      if (container) container.innerHTML = '';
     }
 
     toggleAxisField();
@@ -766,6 +974,15 @@ export async function renderInventory(outlet) {
     setImagePreview(null);
     clearLensErrors();
     toggleLensSection();
+
+    renderInitialTreatmentSelects(
+      normalizeTreatmentsArray(
+        p?.treatments ??
+        p?.product_treatments ??
+        []
+      )
+    );
+
     enforceNegativeCylinder();
     enforceAxisRange();
     productModal.show();
@@ -777,8 +994,11 @@ export async function renderInventory(outlet) {
 
   const wireProductModalHandlers = () => {
     const btnSave = document.getElementById('btnSaveProduct');
+    const categoryEl = document.getElementById('category_id');
+    const treatmentsContainer = getTreatmentsContainer();
+    const btnAddTreatment = document.getElementById('btnAddTreatment');
 
-    document.getElementById('category_id')?.addEventListener('change', toggleLensSection);
+    categoryEl?.addEventListener('change', toggleLensSection);
 
     document.getElementById('cylinder')?.addEventListener('input', () => {
       enforceNegativeCylinder();
@@ -801,6 +1021,63 @@ export async function renderInventory(outlet) {
     document.getElementById('image')?.addEventListener('change', (e) => {
       const file = e.target?.files?.[0] || null;
       readImagePreview(file);
+    });
+
+    btnAddTreatment?.addEventListener('click', () => {
+      const catId = document.getElementById('category_id')?.value || '';
+      const cat = (categories || []).find(x => String(x.id) === String(catId));
+      const code = pickCategoryCode(cat);
+
+      if (code !== 'MICAS') {
+        Swal.fire('No aplica', 'Los tratamientos solo se configuran para MICAS.', 'info');
+        return;
+      }
+
+      addTreatmentSelect('');
+    });
+
+    treatmentsContainer?.addEventListener('click', (e) => {
+      const btn = e.target.closest('.treatment-remove');
+      if (!btn) return;
+
+      const item = btn.closest('.treatment-item');
+      if (item) {
+        item.remove();
+        refreshAllTreatmentSelectOptions();
+      }
+    });
+
+    treatmentsContainer?.addEventListener('change', (e) => {
+      const select = e.target.closest('.treatment-select');
+      if (!select) return;
+
+      select.dataset.selected = select.value || '';
+      refreshAllTreatmentSelectOptions();
+      validateTreatmentDuplicates();
+    });
+
+    treatmentsContainer?.addEventListener('mouseover', (e) => {
+      const item = e.target.closest('.treatment-item');
+      if (!item) return;
+
+      item.style.boxShadow = '0 0 0 2px rgba(126,87,194,.12)';
+      const btn = item.querySelector('.treatment-remove');
+      if (btn) {
+        btn.style.opacity = '1';
+        btn.style.pointerEvents = 'auto';
+      }
+    });
+
+    treatmentsContainer?.addEventListener('mouseout', (e) => {
+      const item = e.target.closest('.treatment-item');
+      if (!item) return;
+
+      item.style.boxShadow = '';
+      const btn = item.querySelector('.treatment-remove');
+      if (btn) {
+        btn.style.opacity = '0';
+        btn.style.pointerEvents = 'none';
+      }
     });
 
     btnSave?.addEventListener('click', async () => {
@@ -860,6 +1137,16 @@ export async function renderInventory(outlet) {
         return;
       }
 
+      if (!validateTreatmentDuplicates()) {
+        return;
+      }
+
+      const cat = (categories || []).find(x => String(x.id) === String(category_id));
+      const code = pickCategoryCode(cat);
+      const treatmentIds = code === 'MICAS'
+        ? getSelectedTreatmentIds()
+        : [];
+
       const imageFile = document.getElementById('image')?.files?.[0] || null;
 
       const formData = new FormData();
@@ -880,6 +1167,10 @@ export async function renderInventory(outlet) {
       appendIfNotNull(formData, 'sphere', sphere);
       appendIfNotNull(formData, 'cylinder', cylinder);
       appendIfNotNull(formData, 'axis', axis);
+
+      treatmentIds.forEach(tid => {
+        formData.append('treatments[]', String(tid));
+      });
 
       if (imageFile) {
         formData.append('image', imageFile);
@@ -1077,12 +1368,13 @@ export async function renderInventory(outlet) {
 
   const loadData = async () => {
     try {
-      const [cats, lt, mats, sups, bxs] = await Promise.all([
+      const [cats, lt, mats, sups, bxs, trts] = await Promise.all([
         inventoryService.listCategories(),
         api.get('/lens-types'),
         api.get('/materials'),
         api.get('/suppliers'),
         api.get('/boxes'),
+        api.get('/treatments'),
       ]);
 
       categories = Array.isArray(cats) ? cats : [];
@@ -1090,6 +1382,7 @@ export async function renderInventory(outlet) {
       materials = Array.isArray(mats?.data) ? mats.data : (Array.isArray(mats) ? mats : []);
       suppliers = Array.isArray(sups?.data) ? sups.data : (Array.isArray(sups) ? sups : []);
       boxes = Array.isArray(bxs?.data) ? bxs.data : (Array.isArray(bxs) ? bxs : []);
+      treatmentsCatalog = Array.isArray(trts?.data) ? trts.data : (Array.isArray(trts) ? trts : []);
     } catch (e) {
       console.warn('No se pudieron cargar catálogos:', e);
       categories = [];
@@ -1097,6 +1390,7 @@ export async function renderInventory(outlet) {
       materials = [];
       suppliers = [];
       boxes = [];
+      treatmentsCatalog = [];
     }
 
     if (view === 'inventory') {

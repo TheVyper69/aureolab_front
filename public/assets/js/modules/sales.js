@@ -3,6 +3,8 @@ import { money } from '../utils/helpers.js';
 
 let salesCharts = [];
 
+// esto es una prueba 
+
 function destroyCharts() {
   for (const ch of salesCharts) {
     try { ch.destroy(); } catch {}
@@ -60,7 +62,7 @@ export async function renderSales(outlet) {
   }
 
   const bestDay = [...byDay].sort((a, b) => Number(b.total || 0) - Number(a.total || 0))[0] || null;
-
+ 
   outlet.innerHTML = `
     <div class="d-flex align-items-center justify-content-between mb-3">
       <h4 class="mb-0">Ventas / Reportes</h4>

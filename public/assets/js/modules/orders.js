@@ -119,6 +119,7 @@ function normalizeOrder(o) {
           axis: it.axis ?? null,
           itemNotes: it.itemNotes ?? it.item_notes ?? null,
           treatments: Array.isArray(it.treatments) ? it.treatments : [],
+          product: prod || null,
         };
       })
     : [];
@@ -263,6 +264,58 @@ function modalTableWrap(innerHtml) {
   `;
 }
 
+function pickFirst(...values) {
+  for (const v of values) {
+    if (v !== null && v !== undefined && String(v).trim() !== '') {
+      return v;
+    }
+  }
+  return null;
+}
+
+function mergeProductSources(primary = {}, secondary = {}, fallback = {}) {
+  return {
+    ...secondary,
+    ...primary,
+    id: pickFirst(primary?.id, secondary?.id, fallback?.productId),
+    sku: pickFirst(primary?.sku, secondary?.sku, fallback?.productSku),
+    name: pickFirst(primary?.name, secondary?.name, fallback?.productName),
+
+    category_name: pickFirst(primary?.category_name, secondary?.category_name, primary?.category, secondary?.category),
+    category_code: pickFirst(primary?.category_code, secondary?.category_code),
+    category: pickFirst(primary?.category, secondary?.category),
+
+    type: pickFirst(primary?.type, secondary?.type),
+    brand: pickFirst(primary?.brand, secondary?.brand),
+    model: pickFirst(primary?.model, secondary?.model),
+    material: pickFirst(primary?.material, secondary?.material),
+    size: pickFirst(primary?.size, secondary?.size),
+
+    lens_type_name: pickFirst(primary?.lens_type_name, secondary?.lens_type_name),
+    lens_type_code: pickFirst(primary?.lens_type_code, secondary?.lens_type_code),
+
+    box_name: pickFirst(primary?.box_name, secondary?.box_name),
+    box_code: pickFirst(primary?.box_code, secondary?.box_code),
+
+    supplier_name: pickFirst(primary?.supplier_name, secondary?.supplier_name),
+
+    material_name: pickFirst(primary?.material_name, secondary?.material_name),
+
+    buy_price: pickFirst(primary?.buy_price, secondary?.buy_price, primary?.buyPrice, secondary?.buyPrice),
+    sale_price: pickFirst(primary?.sale_price, secondary?.sale_price, primary?.salePrice, secondary?.salePrice),
+
+    sphere: pickFirst(primary?.sphere, secondary?.sphere),
+    cylinder: pickFirst(primary?.cylinder, secondary?.cylinder),
+    axis: pickFirst(primary?.axis, secondary?.axis),
+
+    description: pickFirst(primary?.description, secondary?.description),
+
+    treatments: Array.isArray(primary?.treatments)
+      ? primary.treatments
+      : (Array.isArray(secondary?.treatments) ? secondary.treatments : []),
+  };
+}
+
 function showOrderedProductDetail(product, fallback = {}) {
   if (!product && !fallback?.productId) {
     Swal.fire('No encontrado', 'No se encontró la información del producto.', 'warning');
@@ -270,29 +323,32 @@ function showOrderedProductDetail(product, fallback = {}) {
   }
 
   const p = product || {};
-  const treatments = Array.isArray(fallback?.treatments) ? fallback.treatments : [];
+  const treatments = Array.isArray(fallback?.treatments)
+    ? fallback.treatments
+    : (Array.isArray(p?.treatments) ? p.treatments : []);
 
   const treatmentHtml = treatments.length
     ? `
       <div class="mt-3">
-        <div class="small text-muted">Tratamientos ordenados</div>
-        <div class="fw-semibold">
+        <div class="small text-muted">Tratamientos</div>
+        <div class="fw-semibold" style="word-break:break-word;">
           ${treatments.map(t => safe(t?.name || t?.code || `#${t?.id ?? ''}`)).join(', ')}
         </div>
       </div>
     `
     : `
       <div class="mt-3">
-        <div class="small text-muted">Tratamientos ordenados</div>
+        <div class="small text-muted">Tratamientos</div>
         <div class="fw-semibold">—</div>
       </div>
     `;
 
-  const axisHtml = fallback?.axis != null
+  const axisValue = pickFirst(fallback?.axis, p?.axis);
+  const axisHtml = axisValue != null
     ? `
       <div class="col-6">
         <div class="small text-muted">Eje</div>
-        <div class="fw-semibold">${safe(fallback.axis)}</div>
+        <div class="fw-semibold">${safe(axisValue)}</div>
       </div>
     `
     : '';
@@ -306,49 +362,45 @@ function showOrderedProductDetail(product, fallback = {}) {
     `
     : '';
 
-  const sphere = p.sphere ?? p.esfera ?? '—';
-  const cylinder = p.cylinder ?? p.cilindro ?? '—';
+  const sphere = pickFirst(p.sphere, p.esfera, '—');
+  const cylinder = pickFirst(p.cylinder, p.cilindro, '—');
 
   Swal.fire({
     title: `Producto: ${safe(p.name || fallback.productName || 'Producto')}`,
-    width: Math.min(window.innerWidth - 24, 900),
+    width: Math.min(window.innerWidth - 24, 950),
     html: `
       <div class="text-start">
         <div class="row g-2">
           <div class="col-6">
             <div class="small text-muted">SKU</div>
-            <div class="fw-semibold" style="word-break:break-word;">${safe(p.sku || fallback.productSku || fallback.productId || '—')}</div>
+            <div class="fw-semibold">${safe(p.sku || fallback.productSku || fallback.productId || '—')}</div>
           </div>
           <div class="col-6">
             <div class="small text-muted">Nombre</div>
-            <div class="fw-semibold" style="word-break:break-word;">${safe(p.name || fallback.productName || 'Producto')}</div>
+            <div class="fw-semibold">${safe(p.name || fallback.productName || 'Producto')}</div>
           </div>
 
           <div class="col-6">
             <div class="small text-muted">Categoría</div>
-            <div class="fw-semibold" style="word-break:break-word;">${safe(p.category_name || p.category || p.category_code || '—')}</div>
-          </div>
-          <div class="col-6">
-            <div class="small text-muted">Tipo</div>
-            <div class="fw-semibold" style="word-break:break-word;">${safe(p.type || '—')}</div>
+            <div class="fw-semibold">${safe(p.category_name || p.category || p.category_code || '—')}</div>
           </div>
 
           <div class="col-6">
-            <div class="small text-muted">Marca</div>
-            <div class="fw-semibold" style="word-break:break-word;">${safe(p.brand || '—')}</div>
+            <div class="small text-muted">Tipo de mica</div>
+            <div class="fw-semibold">${safe(p.lens_type_name || p.lens_type_code || '—')}</div>
           </div>
           <div class="col-6">
-            <div class="small text-muted">Modelo</div>
-            <div class="fw-semibold" style="word-break:break-word;">${safe(p.model || '—')}</div>
+            <div class="small text-muted">Caja</div>
+            <div class="fw-semibold">${safe(p.box_name || p.box_code || '—')}</div>
           </div>
 
           <div class="col-6">
-            <div class="small text-muted">Material</div>
-            <div class="fw-semibold" style="word-break:break-word;">${safe(p.material || '—')}</div>
+            <div class="small text-muted">Proveedor</div>
+            <div class="fw-semibold">${safe(p.supplier_name || '—')}</div>
           </div>
           <div class="col-6">
-            <div class="small text-muted">Tamaño</div>
-            <div class="fw-semibold" style="word-break:break-word;">${safe(p.size || '—')}</div>
+            <div class="small text-muted">Material catálogo</div>
+            <div class="fw-semibold">${safe(p.material_name || '—')}</div>
           </div>
 
           <div class="col-6">
@@ -374,7 +426,7 @@ function showOrderedProductDetail(product, fallback = {}) {
 
         <div class="mt-3">
           <div class="small text-muted">Descripción</div>
-          <div class="fw-semibold" style="word-break:break-word;">${safe(p.description || '—')}</div>
+          <div class="fw-semibold">${safe(p.description || '—')}</div>
         </div>
 
         ${treatmentHtml}
@@ -402,7 +454,12 @@ async function showOrderDetail(order, productsMap, opticasById, ctx) {
   const processOptions = getAllowedProcessOptions(role, procSt);
 
   const itemsHtml = (o.items || []).map((it, idx) => {
-    const p = productsMap.get(String(it.productId)) || {};
+    const p = mergeProductSources(
+      it.product || {},
+      productsMap.get(String(it.productId)) || {},
+      it
+    );
+
     const sku = p.sku || it.productSku || (it.productId ?? '—');
     const name = p.name || it.productName || 'Producto';
 
@@ -649,12 +706,17 @@ async function showOrderDetail(order, productsMap, opticasById, ctx) {
           const productId = btn.dataset.viewProduct;
           const itemIndex = Number(btn.dataset.itemIndex || -1);
 
-          const product = productsMap.get(String(productId)) || null;
           const fallbackItem = itemIndex >= 0
             ? (o.items || [])[itemIndex] || {}
             : ((o.items || []).find(x => String(x.productId) === String(productId)) || {});
 
-          showOrderedProductDetail(product, fallbackItem);
+          const mergedProduct = mergeProductSources(
+            fallbackItem?.product || {},
+            productsMap.get(String(productId)) || {},
+            fallbackItem
+          );
+
+          showOrderedProductDetail(mergedProduct, fallbackItem);
         });
       });
 
