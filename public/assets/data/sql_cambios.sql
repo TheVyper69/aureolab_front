@@ -78,7 +78,7 @@ MODIFY COLUMN movement_type ENUM('in','out','reserve','unreserve') NOT NULL;
 ALTER TABLE inventory_movements
 MODIFY COLUMN reference_type ENUM('manual','order','order_cancel') NOT NULL;
 
--- se hizo en lap costa azul
+
 
 SELECT id, sku, name, sphere, cylinder, axis
 FROM products
@@ -136,4 +136,30 @@ CHECK (
   (axis IS NULL AND (cylinder IS NULL OR cylinder < 0))
   OR
   (axis IS NOT NULL AND cylinder IS NOT NULL AND cylinder < 0)
+);
+
+
+--se realizo en lap will
+ALTER TABLE products
+ADD COLUMN is_custom TINYINT(1) NOT NULL DEFAULT 0 AFTER active,
+ADD COLUMN show_in_pos TINYINT(1) NOT NULL DEFAULT 1 AFTER is_custom;
+
+CREATE TABLE order_item_custom_bisel (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    order_item_id BIGINT UNSIGNED NOT NULL,
+    reflection VARCHAR(120) NULL,
+    lens_type_id BIGINT UNSIGNED NULL,
+    frame_height DECIMAL(10,2) NULL,
+    blank_height DECIMAL(10,2) NULL,
+    observations TEXT NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_order_item_custom_bisel_order_item
+        FOREIGN KEY (order_item_id) REFERENCES order_items(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_order_item_custom_bisel_lens_type
+        FOREIGN KEY (lens_type_id) REFERENCES lens_types(id)
+        ON DELETE SET NULL
 );

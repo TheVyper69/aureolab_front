@@ -80,6 +80,29 @@ async function cancelOrder(orderId) {
   return await api.patch(`/orders/${orderId}/cancel`);
 }
 
+function pickFirst(...values) {
+  for (const v of values) {
+    if (v !== null && v !== undefined && String(v).trim() !== '') {
+      return v;
+    }
+  }
+  return null;
+}
+
+function normalizeCustomBisel(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+
+  return {
+    reflection: raw.reflection ?? raw.reflexion ?? null,
+    lensTypeId: raw.lensTypeId ?? raw.lens_type_id ?? null,
+    lensTypeCode: raw.lensTypeCode ?? raw.lens_type_code ?? null,
+    lensTypeName: raw.lensTypeName ?? raw.lens_type_name ?? null,
+    frameHeight: raw.frameHeight ?? raw.frame_height ?? null,
+    blankHeight: raw.blankHeight ?? raw.blank_height ?? null,
+    observations: raw.observations ?? null,
+  };
+}
+
 function normalizeOrder(o) {
   if (!o) return o;
 
@@ -110,6 +133,7 @@ function normalizeOrder(o) {
         const productName = it.productName ?? it.name ?? prod?.name ?? null;
 
         return {
+          id: it.id ?? null,
           productId,
           productSku,
           productName,
@@ -120,6 +144,7 @@ function normalizeOrder(o) {
           itemNotes: it.itemNotes ?? it.item_notes ?? null,
           treatments: Array.isArray(it.treatments) ? it.treatments : [],
           product: prod || null,
+          customBisel: normalizeCustomBisel(it.customBisel ?? it.custom_bisel ?? prod?.custom_bisel ?? null),
         };
       })
     : [];
@@ -264,15 +289,6 @@ function modalTableWrap(innerHtml) {
   `;
 }
 
-function pickFirst(...values) {
-  for (const v of values) {
-    if (v !== null && v !== undefined && String(v).trim() !== '') {
-      return v;
-    }
-  }
-  return null;
-}
-
 function mergeProductSources(primary = {}, secondary = {}, fallback = {}) {
   return {
     ...secondary,
@@ -310,10 +326,32 @@ function mergeProductSources(primary = {}, secondary = {}, fallback = {}) {
 
     description: pickFirst(primary?.description, secondary?.description),
 
+    is_custom: pickFirst(primary?.is_custom, secondary?.is_custom, 0),
+    show_in_pos: pickFirst(primary?.show_in_pos, secondary?.show_in_pos, 1),
+
     treatments: Array.isArray(primary?.treatments)
       ? primary.treatments
       : (Array.isArray(secondary?.treatments) ? secondary.treatments : []),
+
+    custom_bisel: primary?.custom_bisel ?? secondary?.custom_bisel ?? null,
   };
+}
+
+function renderCustomBiselHtml(customBisel) {
+  if (!customBisel) return '';
+
+  return `
+    <div class="mt-3">
+      <div class="small text-muted">Biselado personalizado</div>
+      <div class="border rounded p-2 mt-1">
+        <div><b>Reflexión:</b> ${safe(customBisel.reflection || '—')}</div>
+        <div><b>Tipo de lente:</b> ${safe(customBisel.lensTypeName || customBisel.lensTypeCode || '—')}</div>
+        <div><b>Altura de armazón:</b> ${safe(customBisel.frameHeight ?? '—')}cm</div>
+        <div><b>Altura de oblea:</b> ${safe(customBisel.blankHeight ?? '—')}cm</div>
+        <div><b>Observaciones:</b> ${safe(customBisel.observations || '—')}</div>
+      </div>
+    </div>
+  `;
 }
 
 function showOrderedProductDetail(product, fallback = {}) {
@@ -323,6 +361,8 @@ function showOrderedProductDetail(product, fallback = {}) {
   }
 
   const p = product || {};
+  const customBisel = normalizeCustomBisel(fallback?.customBisel ?? fallback?.custom_bisel ?? p?.custom_bisel ?? null);
+
   const treatments = Array.isArray(fallback?.treatments)
     ? fallback.treatments
     : (Array.isArray(p?.treatments) ? p.treatments : []);
@@ -365,8 +405,12 @@ function showOrderedProductDetail(product, fallback = {}) {
   const sphere = pickFirst(p.sphere, p.esfera, '—');
   const cylinder = pickFirst(p.cylinder, p.cilindro, '—');
 
+  const customProductBadge = Number(p?.is_custom || 0) === 1
+    ? `<span class="badge text-bg-secondary ms-2">Personalizado</span>`
+    : '';
+
   Swal.fire({
-    title: `Producto: ${safe(p.name || fallback.productName || 'Producto')}`,
+    title: `Producto: ${safe(p.name || fallback.productName || 'Producto')}${customProductBadge}`,
     width: Math.min(window.innerWidth - 24, 950),
     html: `
       <div class="text-start">
@@ -389,6 +433,7 @@ function showOrderedProductDetail(product, fallback = {}) {
             <div class="small text-muted">Tipo de mica</div>
             <div class="fw-semibold">${safe(p.lens_type_name || p.lens_type_code || '—')}</div>
           </div>
+
           <div class="col-6">
             <div class="small text-muted">Caja</div>
             <div class="fw-semibold">${safe(p.box_name || p.box_code || '—')}</div>
@@ -398,6 +443,7 @@ function showOrderedProductDetail(product, fallback = {}) {
             <div class="small text-muted">Proveedor</div>
             <div class="fw-semibold">${safe(p.supplier_name || '—')}</div>
           </div>
+
           <div class="col-6">
             <div class="small text-muted">Material catálogo</div>
             <div class="fw-semibold">${safe(p.material_name || '—')}</div>
@@ -407,6 +453,7 @@ function showOrderedProductDetail(product, fallback = {}) {
             <div class="small text-muted">Precio compra</div>
             <div class="fw-semibold">${money(p.buy_price ?? p.buyPrice ?? 0)}</div>
           </div>
+
           <div class="col-6">
             <div class="small text-muted">Precio venta</div>
             <div class="fw-semibold">${money(p.sale_price ?? p.salePrice ?? 0)}</div>
@@ -416,6 +463,7 @@ function showOrderedProductDetail(product, fallback = {}) {
             <div class="small text-muted">Esfera</div>
             <div class="fw-semibold">${safe(sphere)}</div>
           </div>
+
           <div class="col-6">
             <div class="small text-muted">Cilindro</div>
             <div class="fw-semibold">${safe(cylinder)}</div>
@@ -430,6 +478,7 @@ function showOrderedProductDetail(product, fallback = {}) {
         </div>
 
         ${treatmentHtml}
+        ${renderCustomBiselHtml(customBisel)}
         ${notesHtml}
       </div>
     `,
@@ -477,6 +526,17 @@ async function showOrderDetail(order, productsMap, opticasById, ctx) {
       `
       : '';
 
+    const customBisel = normalizeCustomBisel(it.customBisel);
+    const customBiselHtml = customBisel
+      ? `
+        <div class="small text-muted mt-1" style="white-space:normal; word-break:break-word;">
+          <b>Bisel personalizado:</b>
+          ${safe(customBisel.reflection || 'Sin reflexión')}
+          · ${safe(customBisel.lensTypeName || customBisel.lensTypeCode || 'Sin tipo')}
+        </div>
+      `
+      : '';
+
     const axisHtml = it.axis != null
       ? `<div class="small text-muted mt-1"><b>Eje:</b> ${safe(it.axis)}</div>`
       : '';
@@ -491,6 +551,7 @@ async function showOrderDetail(order, productsMap, opticasById, ctx) {
         <td style="min-width:240px; white-space:normal; word-break:break-word;">
           <div class="fw-semibold">${safe(name)}</div>
           ${treatmentsHtml}
+          ${customBiselHtml}
           ${axisHtml}
           ${notesHtml}
         </td>
@@ -715,6 +776,18 @@ async function showOrderDetail(order, productsMap, opticasById, ctx) {
             productsMap.get(String(productId)) || {},
             fallbackItem
           );
+
+          if (fallbackItem?.customBisel) {
+            mergedProduct.custom_bisel = {
+              reflection: fallbackItem.customBisel.reflection,
+              lens_type_id: fallbackItem.customBisel.lensTypeId,
+              lens_type_code: fallbackItem.customBisel.lensTypeCode,
+              lens_type_name: fallbackItem.customBisel.lensTypeName,
+              frame_height: fallbackItem.customBisel.frameHeight,
+              blank_height: fallbackItem.customBisel.blankHeight,
+              observations: fallbackItem.customBisel.observations,
+            };
+          }
 
           showOrderedProductDetail(mergedProduct, fallbackItem);
         });

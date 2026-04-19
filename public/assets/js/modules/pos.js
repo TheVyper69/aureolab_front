@@ -1,9 +1,7 @@
 // public/assets/js/pages/pos.js
-// FULL - actualizado para imágenes protegidas y imageUrl absoluta/relativa
-// CAMBIOS VISUALES:
-// - Se quitaron los textos pequeños grises (small text-muted)
-// - No se tocó la lógica de negocio salvo lo mínimo necesario para ocultar esos textos
-// - Se dejaron comentarios donde se hicieron los cambios
+// FULL - actualizado para imágenes protegidas
+// + biselado personalizado sin producto visible en POS
+// + checkout compatible con OrdersController custom_bisel
 
 import { api } from '../services/api.js';
 import { money } from '../utils/helpers.js';
@@ -95,6 +93,8 @@ export async function renderPOS(outlet) {
   let products = [];
   let inventory = [];
   let categoriesApi = [];
+  let treatmentsCatalog = [];
+  let lensTypesCatalog = [];
 
   let stockById = new Map();
   let reservedById = new Map();
@@ -155,6 +155,7 @@ export async function renderPOS(outlet) {
 
   const getProductCategoryLabel = (p) => {
     if (p?.category_name) return String(p.category_name);
+    if (p?.category_label) return String(p.category_label);
     if (p?.category) return String(p.category);
 
     const cid = Number(p?.category_id || 0);
@@ -217,30 +218,53 @@ export async function renderPOS(outlet) {
       }, []);
   };
 
+  const treatmentIdsKey = (arr) => {
+    return normalizeTreatments(arr)
+      .map(x => x.id)
+      .sort((a, b) => a - b)
+      .join(',');
+  };
+
   const makeCartKey = (itemLike) => {
     const pid = Number(itemLike?.id ?? itemLike?.product_id ?? 0);
     const variantId = Number(itemLike?.variant_id ?? 0);
     const axis = itemLike?.axis ?? '';
-    return `${pid}::${variantId}::${axis}`;
+    const tKey = treatmentIdsKey(itemLike?.treatments ?? []);
+    const customKey = itemLike?.custom_bisel
+      ? JSON.stringify({
+          reflection: itemLike.reflection ?? '',
+          lens_type_id: itemLike.lens_type_id ?? '',
+          frame_height: itemLike.frame_height ?? '',
+          blank_height: itemLike.blank_height ?? '',
+          observations: itemLike.observations ?? '',
+          treatments: normalizeTreatments(itemLike.treatments || []).map(t => t.id).sort((a, b) => a - b)
+        })
+      : '';
+
+    return `${pid}::${variantId}::${axis}::${tKey}::${customKey}`;
   };
 
   const getCartQtyForProduct = (productId) =>
     cart
-      .filter(x => Number(x.id) === Number(productId))
+      .filter(x => Number(x.id) === Number(productId) && !x.custom_bisel)
       .reduce((acc, x) => acc + Number(x.qty || 0), 0);
 
   async function loadCore() {
-    DBG('loadCore -> /products + /inventory + /categories');
+    DBG('loadCore -> /products + /inventory + /categories + /treatments + /lens-types');
 
-    const [prodRes, invRes, catRes] = await Promise.allSettled([
+    const [prodRes, invRes, catRes, trRes, ltRes] = await Promise.allSettled([
       api.get('/products'),
       api.get('/inventory'),
       api.get('/categories'),
+      api.get('/treatments'),
+      api.get('/lens-types'),
     ]);
 
     const prodData = (prodRes.status === 'fulfilled') ? (prodRes.value?.data ?? []) : [];
     const invData = (invRes.status === 'fulfilled') ? (invRes.value?.data ?? []) : [];
     categoriesApi = (catRes.status === 'fulfilled') ? (catRes.value?.data ?? []) : [];
+    treatmentsCatalog = (trRes.status === 'fulfilled' && Array.isArray(trRes.value?.data)) ? trRes.value.data : [];
+    lensTypesCatalog = (ltRes.status === 'fulfilled' && Array.isArray(ltRes.value?.data)) ? ltRes.value.data : [];
 
     buildCategoryMap();
 
@@ -277,8 +301,7 @@ export async function renderPOS(outlet) {
     DBG('products loaded', products.map(p => ({
       id: p.id,
       name: p.name,
-      imageUrl: p.imageUrl,
-      treatments: p.treatments
+      imageUrl: p.imageUrl
     })));
   }
 
@@ -396,6 +419,12 @@ export async function renderPOS(outlet) {
         </div>
       </div>
 
+      <div class="mt-3 d-flex flex-wrap gap-2">
+        <button type="button" class="btn btn-outline-brand" id="btnCustomBisel">
+          Ordenar biselado personalizado
+        </button>
+      </div>
+
       <div class="d-flex flex-wrap gap-3 align-items-center mt-3">
         ${
           isOptica
@@ -413,13 +442,10 @@ export async function renderPOS(outlet) {
                        class="form-control form-control-sm" style="max-width:110px;"
                        placeholder="%"
                 />
-                <!-- Texto gris oculto, se deja el nodo por compatibilidad con la lógica -->
                 <span id="orderDiscountHint" class="d-none"></span>
               </div>
             `
         }
-
-        <!-- Se quitaron los textos auxiliares grises de stock crítico y token -->
       </div>
     </div>
 
@@ -486,7 +512,6 @@ export async function renderPOS(outlet) {
               <option value="card">Tarjeta</option>
               <option value="transfer">Transferencia</option>
             </select>
-            <!-- Quitado texto gris de ayuda del método de pago -->
           </div>
 
           ${
@@ -497,7 +522,6 @@ export async function renderPOS(outlet) {
                   <div class="form-control bg-light" id="opticaCustomerBox">
                     ${safe(opticaUserContext.name || 'Óptica')}
                   </div>
-                  <!-- Quitado texto gris de ayuda del cliente -->
                 </div>
               `
               : `
@@ -508,7 +532,6 @@ export async function renderPOS(outlet) {
                   <div id="customerSuggest" class="list-group position-absolute w-100"
                        style="z-index:2000; display:none; max-height:240px; overflow:auto;">
                   </div>
-                  <!-- Quitado texto gris de ayuda del autocomplete -->
                 </div>
               `
           }
@@ -517,7 +540,6 @@ export async function renderPOS(outlet) {
             Crear pedido
           </button>
 
-          <!-- Se deja el nodo pero oculto para no mover más la lógica -->
           <div id="checkoutHint" class="d-none"></div>
         </div>
       </div>
@@ -547,8 +569,6 @@ export async function renderPOS(outlet) {
   const setCheckoutState = () => {
     const empty = cart.length === 0;
     btnCheckout.disabled = empty;
-
-    // Se quita la visualización del texto gris inferior
     if (checkoutHint) checkoutHint.style.display = 'none';
   };
 
@@ -840,6 +860,25 @@ export async function renderPOS(outlet) {
     `;
   };
 
+  const customBiselHtml = (it) => {
+    if (!it.custom_bisel) return '';
+
+    const treatmentText = normalizeTreatments(it.treatments || [])
+      .map(x => x.name || `#${x.id}`)
+      .join(', ');
+
+    return `
+      <div class="mt-1 border rounded p-2 bg-light">
+        <div><b>Reflexión:</b> ${safe(it.reflection || '—')}</div>
+        <div><b>Tipo de lente:</b> ${safe(it.lens_type_name || '—')}</div>
+        <div><b>Altura de armazón:</b> ${safe(it.frame_height ?? '—')}</div>
+        <div><b>Altura de oblea:</b> ${safe(it.blank_height ?? '—')}</div>
+        <div><b>Tratamientos:</b> ${safe(treatmentText || '—')}</div>
+        <div><b>Observaciones:</b> ${safe(it.observations || '—')}</div>
+      </div>
+    `;
+  };
+
   const renderCart = () => {
     const box = outlet.querySelector('#cartBox');
 
@@ -853,10 +892,13 @@ export async function renderPOS(outlet) {
     }
 
     box.innerHTML = cart.map(it => {
-      const available = getAvailable(it.id);
-      const totalAlreadyInCartForProduct = getCartQtyForProduct(it.id);
-      const remainingForThisLine = Math.max(0, available - (totalAlreadyInCartForProduct - Number(it.qty || 0)));
-      const atLimit = Number(it.qty || 0) >= remainingForThisLine;
+      const isCustom = !!it.custom_bisel;
+      const available = isCustom ? 999999 : getAvailable(it.id);
+      const totalAlreadyInCartForProduct = isCustom ? 0 : getCartQtyForProduct(it.id);
+      const remainingForThisLine = isCustom
+        ? 999999
+        : Math.max(0, available - (totalAlreadyInCartForProduct - Number(it.qty || 0)));
+      const atLimit = !isCustom && Number(it.qty || 0) >= remainingForThisLine;
 
       const itemDisc = isOptica ? '' : `
         <div class="mt-1 ${discountMode === 'item' ? '' : 'd-none'}" data-itemdiscbox="${it.cart_key}">
@@ -877,9 +919,10 @@ export async function renderPOS(outlet) {
         <div class="d-flex justify-content-between border rounded p-2 mb-2">
           <div style="min-width:0;">
             <div class="fw-semibold">${safe(it.name)}</div>
-            <div>${safe(it.sku)} · ${money(it.salePrice ?? it.sale_price ?? 0)} · Disponible: ${available}</div>
+            <div>${safe(it.sku || 'CUSTOM-BISEL')} · ${money(it.salePrice ?? it.sale_price ?? 0)} · ${isCustom ? 'Personalizado' : `Disponible: ${available}`}</div>
             ${treatmentsHtml(it)}
-            ${available <= CRITICAL_STOCK && available > 0 ? `<div class="text-danger">Stock crítico</div>` : ``}
+            ${customBiselHtml(it)}
+            ${!isCustom && available <= CRITICAL_STOCK && available > 0 ? `<div class="text-danger">Stock crítico</div>` : ``}
             ${itemDisc}
           </div>
 
@@ -955,11 +998,275 @@ export async function renderPOS(outlet) {
     }
   }
 
+  function renderCustomTreatmentRows(selected = []) {
+    const selectedIds = normalizeTreatments(selected).map(t => t.id);
+
+    const makeSelect = (currentId = '') => {
+      const currentNum = Number(currentId || 0);
+
+      const options = (treatmentsCatalog || [])
+        .filter(t => {
+          const id = Number(t.id);
+          return id === currentNum || !selectedIds.includes(id);
+        })
+        .map(t => `<option value="${Number(t.id)}" ${Number(t.id) === currentNum ? 'selected' : ''}>${safe(t.name || t.code || `Tratamiento ${t.id}`)}</option>`)
+        .join('');
+
+      return `
+        <div class="input-group mb-2 js-custom-treatment-row">
+          <select class="form-select js-custom-treatment-select">
+            <option value="">Selecciona tratamiento</option>
+            ${options}
+          </select>
+          <button type="button" class="btn btn-outline-danger js-remove-custom-treatment">×</button>
+        </div>
+      `;
+    };
+
+    if (!selectedIds.length) return makeSelect('');
+    return selectedIds.map(id => makeSelect(id)).join('');
+  }
+
+  async function openCustomBiselModal() {
+    if (!isOptica) {
+      await Swal.fire('No permitido', 'Esta opción está pensada para el flujo de óptica.', 'warning');
+      return;
+    }
+
+    if (!Array.isArray(lensTypesCatalog) || !lensTypesCatalog.length) {
+      await Swal.fire('Falta catálogo', 'No se pudieron cargar los tipos de lente.', 'warning');
+      return;
+    }
+
+    const lensOptions = lensTypesCatalog.map(lt => `
+      <option value="${Number(lt.id)}">${safe(lt.name || lt.code || `Tipo ${lt.id}`)}</option>
+    `).join('');
+
+    const html = `
+      <div class="text-start">
+        <div class="mb-3">
+          <label class="form-label">Reflexión</label>
+          <input id="customBiselReflection" class="form-control" placeholder="Ej. AR, Blue, Transparente" />
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Tratamiento</label>
+          <div id="customBiselTreatmentsBox">
+            ${renderCustomTreatmentRows([])}
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-brand mt-2" id="btnAddCustomTreatment">
+            Agregar tratamiento
+          </button>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Tipo de lente</label>
+          <select id="customBiselLensType" class="form-select">
+            <option value="">Selecciona tipo de lente</option>
+            ${lensOptions}
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Altura de armazón</label>
+          <input id="customBiselFrameHeight" type="number" min="0" step="0.01" class="form-control" placeholder="Ej. 50" />
+          <div class="mt-2">
+            <b>Altura de la oblea:</b> <span id="customBiselBlankHeightText">—</span>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Observaciones</label>
+          <textarea id="customBiselObservations" class="form-control" rows="3" placeholder="Observaciones"></textarea>
+        </div>
+      </div>
+    `;
+
+    const bindCustomTreatmentEvents = () => {
+      const box = document.getElementById('customBiselTreatmentsBox');
+      if (!box) return;
+
+      box.querySelectorAll('.js-remove-custom-treatment').forEach(btn => {
+        btn.onclick = () => {
+          const rows = box.querySelectorAll('.js-custom-treatment-row');
+          if (rows.length <= 1) {
+            const sel = btn.closest('.js-custom-treatment-row')?.querySelector('.js-custom-treatment-select');
+            if (sel) sel.value = '';
+            return;
+          }
+          btn.closest('.js-custom-treatment-row')?.remove();
+          refreshCustomTreatmentOptions();
+        };
+      });
+
+      box.querySelectorAll('.js-custom-treatment-select').forEach(sel => {
+        sel.onchange = () => refreshCustomTreatmentOptions();
+      });
+    };
+
+    const refreshCustomTreatmentOptions = () => {
+      const box = document.getElementById('customBiselTreatmentsBox');
+      if (!box) return;
+
+      const currentValues = Array.from(box.querySelectorAll('.js-custom-treatment-select'))
+        .map(el => Number(el.value || 0));
+
+      const rows = Array.from(box.querySelectorAll('.js-custom-treatment-row'));
+
+      rows.forEach((row, idx) => {
+        const sel = row.querySelector('.js-custom-treatment-select');
+        const current = Number(sel.value || 0);
+
+        const others = currentValues.filter((_, i) => i !== idx && currentValues[i] > 0);
+
+        sel.innerHTML = `
+          <option value="">Selecciona tratamiento</option>
+          ${(treatmentsCatalog || [])
+            .filter(t => {
+              const id = Number(t.id);
+              return id === current || !others.includes(id);
+            })
+            .map(t => `<option value="${Number(t.id)}" ${Number(t.id) === current ? 'selected' : ''}>${safe(t.name || t.code || `Tratamiento ${t.id}`)}</option>`)
+            .join('')}
+        `;
+      });
+
+      bindCustomTreatmentEvents();
+    };
+
+    const recalcBlankHeight = () => {
+      const frameInput = document.getElementById('customBiselFrameHeight');
+      const out = document.getElementById('customBiselBlankHeightText');
+      if (!frameInput || !out) return;
+
+      const frameHeight = Number(frameInput.value || 0);
+      if (!frameInput.value || Number.isNaN(frameHeight) || frameHeight <= 0) {
+        out.textContent = '—';
+        return;
+      }
+
+      const blankHeight = (frameHeight / 2) - 2;
+      out.textContent = Number.isFinite(blankHeight) ? blankHeight.toFixed(2) : '—';
+    };
+
+    const result = await Swal.fire({
+      title: 'Ordenar biselado personalizado',
+      html,
+      width: 720,
+      showCancelButton: true,
+      confirmButtonText: 'Agregar al carrito',
+      cancelButtonText: 'Cancelar',
+      focusConfirm: false,
+      didOpen: () => {
+        const addBtn = document.getElementById('btnAddCustomTreatment');
+        const box = document.getElementById('customBiselTreatmentsBox');
+        const frameInput = document.getElementById('customBiselFrameHeight');
+
+        addBtn?.addEventListener('click', () => {
+          const wrapper = document.createElement('div');
+          wrapper.innerHTML = renderCustomTreatmentRows([]);
+          const row = wrapper.firstElementChild;
+          if (row) box.appendChild(row);
+          refreshCustomTreatmentOptions();
+        });
+
+        frameInput?.addEventListener('input', recalcBlankHeight);
+
+        bindCustomTreatmentEvents();
+        refreshCustomTreatmentOptions();
+        recalcBlankHeight();
+      },
+      preConfirm: () => {
+        const reflection = String(document.getElementById('customBiselReflection')?.value || '').trim();
+        const lensTypeId = Number(document.getElementById('customBiselLensType')?.value || 0);
+        const frameHeight = Number(document.getElementById('customBiselFrameHeight')?.value || 0);
+        const observations = String(document.getElementById('customBiselObservations')?.value || '').trim();
+
+        const blankHeight = Number(((frameHeight / 2) - 2).toFixed(2));
+
+        const selectedTreatments = Array.from(document.querySelectorAll('.js-custom-treatment-select'))
+          .map(el => Number(el.value || 0))
+          .filter(Boolean)
+          .map(id => {
+            const row = treatmentsCatalog.find(t => Number(t.id) === id);
+            return { id, name: row?.name || row?.code || `Tratamiento ${id}` };
+          });
+
+        if (!lensTypeId) {
+          Swal.showValidationMessage('Debes seleccionar tipo de lente.');
+          return false;
+        }
+
+        if (!frameHeight || Number.isNaN(frameHeight) || frameHeight <= 0) {
+          Swal.showValidationMessage('La altura de armazón debe ser mayor a 0.');
+          return false;
+        }
+
+        if (!blankHeight || Number.isNaN(blankHeight) || blankHeight <= 0) {
+          Swal.showValidationMessage('La altura de la oblea calculada no es válida.');
+          return false;
+        }
+
+        const lensType = lensTypesCatalog.find(x => Number(x.id) === lensTypeId);
+
+        return {
+          reflection,
+          lens_type_id: lensTypeId,
+          lens_type_name: lensType?.name || lensType?.code || `Tipo ${lensTypeId}`,
+          frame_height: frameHeight,
+          blank_height: blankHeight,
+          observations,
+          treatments: normalizeTreatments(selectedTreatments),
+        };
+      }
+    });
+
+    if (!result.isConfirmed || !result.value) return;
+
+    const cfg = result.value;
+
+    const customItem = {
+      id: -1,
+      sku: `BIS-CUSTOM-${Date.now()}`,
+      name: 'Biselado personalizado',
+      salePrice: 0,
+      buyPrice: 0,
+      qty: 1,
+      itemDiscountPct: 0,
+      custom_bisel: true,
+      reflection: cfg.reflection || null,
+      lens_type_id: cfg.lens_type_id,
+      lens_type_name: cfg.lens_type_name,
+      frame_height: cfg.frame_height,
+      blank_height: cfg.blank_height,
+      observations: cfg.observations || null,
+      treatments: normalizeTreatments(cfg.treatments || []),
+      item_notes: cfg.observations || null
+    };
+
+    const cart_key = makeCartKey(customItem);
+
+    cart.push({
+      ...customItem,
+      cart_key
+    });
+
+    renderCart();
+  }
+
   const addToCart = async (p) => {
     const available = getAvailable(p.id);
     if (available <= 0) {
       warnNoStock(p.name);
       return false;
+    }
+
+    let selectedTreatments = normalizeTreatments(p.treatments || []);
+
+    if (isOptica && isMicaProduct(p)) {
+      const picked = await selectTreatmentsForProduct(p);
+      if (picked === null) return false;
+      selectedTreatments = picked;
     }
 
     const baseItem = {
@@ -968,7 +1275,7 @@ export async function renderPOS(outlet) {
       buyPrice: p.buyPrice ?? p.buy_price ?? 0,
       qty: 1,
       itemDiscountPct: 0,
-      treatments: normalizeTreatments(p.treatments || []),
+      treatments: selectedTreatments,
     };
 
     const cart_key = makeCartKey(baseItem);
@@ -1119,11 +1426,13 @@ export async function renderPOS(outlet) {
     if (incKey) {
       const it = cart.find(x => String(x.cart_key) === String(incKey));
       if (it) {
-        const available = getAvailable(it.id);
-        const totalForProduct = getCartQtyForProduct(it.id);
-        if (totalForProduct + 1 > available) {
-          warnNoStock(it.name);
-          return;
+        if (!it.custom_bisel) {
+          const available = getAvailable(it.id);
+          const totalForProduct = getCartQtyForProduct(it.id);
+          if (totalForProduct + 1 > available) {
+            warnNoStock(it.name);
+            return;
+          }
         }
         it.qty++;
         renderCart();
@@ -1152,11 +1461,14 @@ export async function renderPOS(outlet) {
     await renderCards();
   });
 
+  outlet.querySelector('#btnCustomBisel')?.addEventListener('click', async () => {
+    await openCustomBiselModal();
+  });
+
   if (!isOptica) {
     discountModeSel.addEventListener('change', () => {
       discountMode = discountModeSel.value === 'item' ? 'item' : 'order';
 
-      // Se conserva la lógica interna, aunque el texto ya no se muestre
       if (discountMode === 'order') {
         if (orderDiscountHint) orderDiscountHint.textContent = 'Aplica a todo el pedido.';
         orderDiscountInp.disabled = false;
@@ -1198,6 +1510,7 @@ export async function renderPOS(outlet) {
 
     const productQtyMap = new Map();
     for (const it of cart) {
+      if (it.custom_bisel) continue;
       const pid = Number(it.id);
       const prev = Number(productQtyMap.get(pid) || 0);
       productQtyMap.set(pid, prev + Number(it.qty || 0));
@@ -1236,16 +1549,32 @@ export async function renderPOS(outlet) {
         }
       }
 
-      return {
-        product_id: Number(it.id),
+      const base = {
+        product_id: it.custom_bisel ? null : Number(it.id),
         variant_id: it.variant_id ? Number(it.variant_id) : null,
         qty,
         unit_price,
         item_discount_type,
         item_discount_value,
         axis: it.axis ?? null,
-        item_notes: it.item_notes ?? null
+        item_notes: it.item_notes ?? null,
+        treatments: normalizeTreatments(it.treatments || []).map(x => x.id),
       };
+
+      if (it.custom_bisel) {
+        return {
+          ...base,
+          custom_bisel: true,
+          reflection: it.reflection ?? null,
+          lens_type_id: it.lens_type_id ? Number(it.lens_type_id) : null,
+          frame_height: it.frame_height != null ? Number(it.frame_height) : null,
+          blank_height: it.blank_height != null ? Number(it.blank_height) : null,
+          observations: it.observations ?? null,
+          name: it.name ?? 'Biselado personalizado',
+        };
+      }
+
+      return base;
     });
 
     const orderPayload = {
@@ -1302,4 +1631,4 @@ export async function renderPOS(outlet) {
   }
 
   DBG('renderPOS end');
-} 
+}
