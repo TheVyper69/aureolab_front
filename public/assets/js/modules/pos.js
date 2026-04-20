@@ -2,6 +2,12 @@
 // FULL - actualizado para imágenes protegidas
 // + biselado personalizado sin producto visible en POS
 // + checkout compatible con OrdersController custom_bisel
+// + refracción usando esfera, cilindro y eje
+// + validaciones ópticas equivalentes:
+//   - cilindro debe ser negativo y no puede ser 0
+//   - si hay cilindro debe haber eje
+//   - si hay eje debe haber cilindro
+//   - eje entre 1 y 180
 
 import { api } from '../services/api.js';
 import { money } from '../utils/helpers.js';
@@ -232,7 +238,9 @@ export async function renderPOS(outlet) {
     const tKey = treatmentIdsKey(itemLike?.treatments ?? []);
     const customKey = itemLike?.custom_bisel
       ? JSON.stringify({
-          reflection: itemLike.reflection ?? '',
+          sphere: itemLike.sphere ?? '',
+          cylinder: itemLike.cylinder ?? '',
+          axis: itemLike.axis ?? '',
           lens_type_id: itemLike.lens_type_id ?? '',
           frame_height: itemLike.frame_height ?? '',
           blank_height: itemLike.blank_height ?? '',
@@ -615,11 +623,11 @@ export async function renderPOS(outlet) {
       pageLength: 8,
       order: [[6, 'asc']],
       language: {
-        search: "Buscar:",
-        lengthMenu: "Mostrar _MENU_",
-        info: "Mostrando _START_ a _END_ de _TOTAL_",
-        paginate: { previous: "Anterior", next: "Siguiente" },
-        zeroRecords: "No hay registros"
+        search: 'Buscar:',
+        lengthMenu: 'Mostrar _MENU_',
+        info: 'Mostrando _START_ a _END_ de _TOTAL_',
+        paginate: { previous: 'Anterior', next: 'Siguiente' },
+        zeroRecords: 'No hay registros'
       }
     });
   }
@@ -869,7 +877,9 @@ export async function renderPOS(outlet) {
 
     return `
       <div class="mt-1 border rounded p-2 bg-light">
-        <div><b>Reflexión:</b> ${safe(it.reflection || '—')}</div>
+        <div><b>Esfera:</b> ${safe(it.sphere ?? '—')}</div>
+        <div><b>Cilindro:</b> ${safe(it.cylinder ?? '—')}</div>
+        <div><b>Eje:</b> ${safe(it.axis ?? '—')}</div>
         <div><b>Tipo de lente:</b> ${safe(it.lens_type_name || '—')}</div>
         <div><b>Altura de armazón:</b> ${safe(it.frame_height ?? '—')}</div>
         <div><b>Altura de oblea:</b> ${safe(it.blank_height ?? '—')}</div>
@@ -1044,12 +1054,24 @@ export async function renderPOS(outlet) {
 
     const html = `
       <div class="text-start">
-        <div class="mb-3">
-          <label class="form-label">Reflexión</label>
-          <input id="customBiselReflection" class="form-control" placeholder="Ej. AR, Blue, Transparente" />
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Esfera</label>
+            <input id="customBiselSphere" type="number" step="0.01" class="form-control" placeholder="Ej. -2.00" />
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Cilindro</label>
+            <input id="customBiselCylinder" type="number" step="0.01" class="form-control" placeholder="Ej. -0.50" />
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Eje</label>
+            <input id="customBiselAxis" type="number" min="1" max="180" step="1" class="form-control" placeholder="Ej. 90" disabled />
+          </div>
         </div>
 
-        <div class="mb-3">
+        <div class="mb-3 mt-3">
           <label class="form-label">Tratamiento</label>
           <div id="customBiselTreatmentsBox">
             ${renderCustomTreatmentRows([])}
@@ -1161,6 +1183,21 @@ export async function renderPOS(outlet) {
         const addBtn = document.getElementById('btnAddCustomTreatment');
         const box = document.getElementById('customBiselTreatmentsBox');
         const frameInput = document.getElementById('customBiselFrameHeight');
+        const cylinderInput = document.getElementById('customBiselCylinder');
+        const axisInput = document.getElementById('customBiselAxis');
+
+        const syncAxisState = () => {
+          if (!axisInput || !cylinderInput) return;
+
+          const cylinderRaw = String(cylinderInput.value || '').trim();
+          const hasCylinder = cylinderRaw !== '';
+
+          axisInput.disabled = !hasCylinder;
+
+          if (!hasCylinder) {
+            axisInput.value = '';
+          }
+        };
 
         addBtn?.addEventListener('click', () => {
           const wrapper = document.createElement('div');
@@ -1171,13 +1208,18 @@ export async function renderPOS(outlet) {
         });
 
         frameInput?.addEventListener('input', recalcBlankHeight);
+        cylinderInput?.addEventListener('input', syncAxisState);
 
         bindCustomTreatmentEvents();
         refreshCustomTreatmentOptions();
         recalcBlankHeight();
+        syncAxisState();
       },
       preConfirm: () => {
-        const reflection = String(document.getElementById('customBiselReflection')?.value || '').trim();
+        const sphereRaw = String(document.getElementById('customBiselSphere')?.value || '').trim();
+        const cylinderRaw = String(document.getElementById('customBiselCylinder')?.value || '').trim();
+        const axisRaw = String(document.getElementById('customBiselAxis')?.value || '').trim();
+
         const lensTypeId = Number(document.getElementById('customBiselLensType')?.value || 0);
         const frameHeight = Number(document.getElementById('customBiselFrameHeight')?.value || 0);
         const observations = String(document.getElementById('customBiselObservations')?.value || '').trim();
@@ -1207,10 +1249,51 @@ export async function renderPOS(outlet) {
           return false;
         }
 
+        const sphere = sphereRaw === '' ? null : Number(sphereRaw);
+        const cylinder = cylinderRaw === '' ? null : Number(cylinderRaw);
+        const axis = axisRaw === '' ? null : Number(axisRaw);
+
+        if (sphereRaw !== '' && Number.isNaN(sphere)) {
+          Swal.showValidationMessage('La esfera debe ser numérica.');
+          return false;
+        }
+
+        if (cylinderRaw !== '' && Number.isNaN(cylinder)) {
+          Swal.showValidationMessage('El cilindro debe ser numérico.');
+          return false;
+        }
+
+        if (axisRaw !== '' && Number.isNaN(axis)) {
+          Swal.showValidationMessage('El eje debe ser numérico.');
+          return false;
+        }
+
+        if (cylinder !== null && cylinder >= 0) {
+          Swal.showValidationMessage('El cilindro debe ser negativo y no puede ser 0.');
+          return false;
+        }
+
+        if (cylinder !== null && axis === null) {
+          Swal.showValidationMessage('Si capturas cilindro debes capturar el eje.');
+          return false;
+        }
+
+        if (cylinder === null && axis !== null) {
+          Swal.showValidationMessage('Si capturas eje debes capturar cilindro.');
+          return false;
+        }
+
+        if (axis !== null && (axis < 1 || axis > 180)) {
+          Swal.showValidationMessage('El eje debe estar entre 1 y 180.');
+          return false;
+        }
+
         const lensType = lensTypesCatalog.find(x => Number(x.id) === lensTypeId);
 
         return {
-          reflection,
+          sphere,
+          cylinder,
+          axis,
           lens_type_id: lensTypeId,
           lens_type_name: lensType?.name || lensType?.code || `Tipo ${lensTypeId}`,
           frame_height: frameHeight,
@@ -1234,7 +1317,9 @@ export async function renderPOS(outlet) {
       qty: 1,
       itemDiscountPct: 0,
       custom_bisel: true,
-      reflection: cfg.reflection || null,
+      sphere: cfg.sphere,
+      cylinder: cfg.cylinder,
+      axis: cfg.axis,
       lens_type_id: cfg.lens_type_id,
       lens_type_name: cfg.lens_type_name,
       frame_height: cfg.frame_height,
@@ -1565,7 +1650,9 @@ export async function renderPOS(outlet) {
         return {
           ...base,
           custom_bisel: true,
-          reflection: it.reflection ?? null,
+          sphere: it.sphere ?? null,
+          cylinder: it.cylinder ?? null,
+          axis: it.axis ?? null,
           lens_type_id: it.lens_type_id ? Number(it.lens_type_id) : null,
           frame_height: it.frame_height != null ? Number(it.frame_height) : null,
           blank_height: it.blank_height != null ? Number(it.blank_height) : null,

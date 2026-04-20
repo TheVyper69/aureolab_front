@@ -3,8 +3,6 @@ import { money } from '../utils/helpers.js';
 
 let salesCharts = [];
 
-// esto es una prueba
-
 function destroyCharts() {
   for (const ch of salesCharts) {
     try { ch.destroy(); } catch {}
@@ -22,6 +20,12 @@ function safe(v) {
 
 export async function renderSales(outlet) {
   destroyCharts();
+
+  const COLORS = {
+    lila: '#9D7AD6',
+    lilaClaro: '#B39DDB',
+    lilaOscuro: '#7E57C2'
+  };
 
   let dashboard = {
     orders: 0,
@@ -193,7 +197,12 @@ export async function renderSales(outlet) {
         labels: byDayLabels,
         datasets: [{
           label: 'Ingresos',
-          data: byDayTotals
+          data: byDayTotals,
+          backgroundColor: COLORS.lilaClaro,
+          borderColor: COLORS.lilaOscuro,
+          borderWidth: 2,
+          borderRadius: 8,
+          hoverBackgroundColor: COLORS.lila
         }]
       },
       options: {
@@ -218,7 +227,18 @@ export async function renderSales(outlet) {
         labels: pmLabels,
         datasets: [{
           label: 'Métodos de pago',
-          data: pmTotals
+          data: pmTotals,
+          backgroundColor: [
+            COLORS.lila,
+            COLORS.lilaClaro,
+            COLORS.lilaOscuro,
+            '#C7B3EA',
+            '#8E6BCB',
+            '#6A45B8'
+          ],
+          borderColor: '#ffffff',
+          borderWidth: 2,
+          hoverOffset: 8
         }]
       },
       options: {
@@ -238,7 +258,12 @@ export async function renderSales(outlet) {
         labels: topLabels,
         datasets: [{
           label: 'Cantidad vendida',
-          data: topQty
+          data: topQty,
+          backgroundColor: COLORS.lila,
+          borderColor: COLORS.lilaOscuro,
+          borderWidth: 2,
+          borderRadius: 8,
+          hoverBackgroundColor: COLORS.lilaClaro
         }]
       },
       options: {

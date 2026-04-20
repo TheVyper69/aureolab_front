@@ -6,20 +6,21 @@ export function renderLayout(){
 
   // ✅ POS solo para óptica
   const links = [
+    { hash: '#/sales',     label: 'Ventas / Reportes', roles: ['admin'] },
     { hash: '#/pos',       label: 'Catálogo',          roles: ['optica'] },
     { hash: '#/inventory', label: 'Inventario',        roles: ['admin','employee'] },
-    { hash: '#/sales',     label: 'Ventas / Reportes', roles: ['admin'] },
+    { hash: '#/orders',    label: 'Pedidos',           roles: ['optica','employee','admin'] },
     { hash: '#/users',     label: 'Usuarios',          roles: ['admin'] },
     { hash: '#/opticas',   label: 'Ópticas',           roles: ['admin'] },
-    { hash: '#/orders',    label: 'Pedidos',           roles: ['optica','employee','admin'] }
   ].filter(l => l.roles.includes(role));
 
   // ✅ default por rol
   const defaultHash =
     role === 'optica' ? '#/pos'
-    : (role === 'admin' || role === 'employee') ? '#/inventory'
+    : role === 'admin' ? '#/sales'
+    : role === 'employee' ? '#/inventory'
     : '#/login';
-
+    
   const current = location.hash || defaultHash;
 
   return `

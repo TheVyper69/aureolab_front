@@ -64,7 +64,7 @@ export function renderLogin(root){
       const role = authService.getRole();
       if(role === 'optica') location.hash = '#/orders';     // o '#/pos' si quieres que entren al POS directo
       else if(role === 'employee') location.hash = '#/pos';
-      else location.hash = '#/pos'; // admin
+      else location.hash = '#/sales'; // admin
     }catch(err){
       const msg =
         err?.response?.data?.message ||

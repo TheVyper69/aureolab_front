@@ -36,8 +36,9 @@ function requireAuth(hash) {
 }
 
 function defaultRouteByRole(role){
-  if(role === 'optica') return '#/pos';
-  if(role === 'admin' || role === 'employee') return '#/inventory';
+  if (role === 'admin') return '#/sales';
+  if (role === 'employee') return '#/inventory';
+  if (role === 'optica') return '#/pos';
   return '#/login';
 }
 
