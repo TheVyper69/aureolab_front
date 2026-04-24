@@ -11,7 +11,7 @@ export function renderLayout(){
     { hash: '#/inventory', label: 'Inventario',        roles: ['admin','employee'] },
     { hash: '#/orders',    label: 'Pedidos',           roles: ['optica','employee','admin'] },
     { hash: '#/users',     label: 'Usuarios',          roles: ['admin'] },
-    { hash: '#/opticas',   label: 'Ópticas',           roles: ['admin'] },
+    { hash: '#/otros',   label: 'Otros',           roles: ['admin'] },
   ].filter(l => l.roles.includes(role));
 
   // ✅ default por rol

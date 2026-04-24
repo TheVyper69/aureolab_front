@@ -6,7 +6,7 @@ import { renderPOS } from './modules/pos.js';
 import { renderInventory } from './modules/inventory.js';
 import { renderSales } from './modules/sales.js';
 import { renderUsers } from './modules/users.js';
-import { renderOpticas } from './modules/opticas.js';
+import { renderOtros } from './modules/otros.js';
 import { renderOrders } from './modules/orders.js';
 
 import { authService } from './services/authService.js';
@@ -20,7 +20,7 @@ const routes = {
   '#/inventory': renderInventory,
   '#/sales': renderSales,
   '#/users': renderUsers,
-  '#/opticas': renderOpticas,
+  '#/otros': renderOtros,
   '#/orders': renderOrders
 };
 
@@ -46,7 +46,7 @@ function requireRole(hash) {
   const role = authService.getRole();
 
   // Admin-only
-  const adminOnly = ['#/users', '#/opticas', '#/sales'];
+  const adminOnly = ['#/users', '#/otros', '#/sales'];
 
   // ✅ Óptica allowed (POS + pedidos)
   const opticaAllowed = ['#/pos', '#/orders'];
