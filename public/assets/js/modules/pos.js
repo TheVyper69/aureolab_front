@@ -2,12 +2,10 @@
 // FULL - actualizado para imágenes protegidas
 // + biselado personalizado sin producto visible en POS
 // + checkout compatible con OrdersController custom_bisel
-// + refracción usando esfera, cilindro y eje
-// + validaciones ópticas equivalentes:
-//   - cilindro debe ser negativo y no puede ser 0
-//   - si hay cilindro debe haber eje
-//   - si hay eje debe haber cilindro
-//   - eje entre 1 y 180
+// + refracción en biselado personalizado: esfera, cilindro y eje
+// + eje solo habilitado si se captura cilindro
+// + validaciones ópticas de cilindro/eje
+// + al agregar mica con cilindro, pide eje antes de agregar al carrito
 
 import { api } from '../services/api.js';
 import { money } from '../utils/helpers.js';
@@ -75,10 +73,17 @@ export async function renderPOS(outlet) {
 
   const fmtGrad = (g) => {
     if (!g) return '—';
-    const sph = (g.sph ?? '').toString().trim();
-    const cyl = (g.cyl ?? '').toString().trim();
-    if (!sph && !cyl) return '—';
-    return `SPH: <b>${safe(sph || '—')}</b> · CYL: <b>${safe(cyl || '—')}</b>`;
+    const sph = (g.sph ?? g.sphere ?? '').toString().trim();
+    const cyl = (g.cyl ?? g.cylinder ?? '').toString().trim();
+    const axis = (g.axis ?? '').toString().trim();
+
+    if (!sph && !cyl && !axis) return '—';
+
+    return `
+      SPH: <b>${safe(sph || '—')}</b>
+      · CYL: <b>${safe(cyl || '—')}</b>
+      ${axis ? `· Eje: <b>${safe(axis)}</b>` : ''}
+    `;
   };
 
   const fmtBisel = (b) => {
@@ -136,9 +141,11 @@ export async function renderPOS(outlet) {
 
   const buildCategoryMap = () => {
     categoryById.clear();
+
     for (const c of (categoriesApi || [])) {
       const id = Number(c?.id || 0);
       if (!id) continue;
+
       categoryById.set(id, {
         id,
         code: String(c?.code || '').trim(),
@@ -183,6 +190,116 @@ export async function renderPOS(outlet) {
       || label.includes('MICA');
   };
 
+  const opticalValue = (p, ...keys) => {
+    for (const key of keys) {
+      const v = p?.[key];
+      if (v !== null && v !== undefined && String(v).trim() !== '') {
+        return v;
+      }
+    }
+
+    return null;
+  };
+
+  const getProductSphere = (p) => opticalValue(p, 'sphere', 'sph', 'esfera');
+  const getProductCylinder = (p) => opticalValue(p, 'cylinder', 'cyl', 'cilindro');
+
+  const micaHasCylinder = (p) => {
+    if (!isMicaProduct(p)) return false;
+
+    const raw = getProductCylinder(p);
+    if (raw === null) return false;
+
+    const cylinder = Number(raw);
+    return Number.isFinite(cylinder) && cylinder !== 0;
+  };
+
+  async function requestAxisForMica(p) {
+    if (!isOptica || !micaHasCylinder(p)) return null;
+
+    const sphereRaw = getProductSphere(p);
+    const cylinderRaw = getProductCylinder(p);
+    const cylinder = Number(cylinderRaw);
+
+    if (!Number.isFinite(cylinder)) {
+      await Swal.fire('Graduación inválida', 'El cilindro de la mica no es numérico.', 'error');
+      return false;
+    }
+
+    if (cylinder >= 0) {
+      await Swal.fire('Graduación inválida', 'El cilindro de la mica debe ser negativo y no puede ser 0.', 'error');
+      return false;
+    }
+
+    const result = await Swal.fire({
+      title: 'Capturar eje de la mica',
+      html: `
+        <div class="text-start">
+          <div class="alert alert-light border mb-3">
+            <div><b>${safe(p?.name || 'Mica')}</b></div>
+            <div class="small text-muted">SKU: ${safe(p?.sku || '—')}</div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label">Esfera</label>
+              <input class="form-control" value="${safe(sphereRaw ?? '—')}" disabled />
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Cilindro</label>
+              <input class="form-control" value="${safe(cylinderRaw ?? '—')}" disabled />
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Eje</label>
+              <input id="micaAxisInput" type="number" min="1" max="180" step="1" class="form-control" placeholder="Ej. 90" />
+              <div class="form-text">Obligatorio porque la mica tiene cilindro.</div>
+            </div>
+          </div>
+        </div>
+      `,
+      width: 620,
+      showCancelButton: true,
+      confirmButtonText: 'Continuar',
+      cancelButtonText: 'Cancelar',
+      focusConfirm: false,
+      didOpen: () => {
+        const axisInput = document.getElementById('micaAxisInput');
+        axisInput?.focus();
+      },
+      preConfirm: () => {
+        const axisRaw = String(document.getElementById('micaAxisInput')?.value || '').trim();
+        const axis = axisRaw === '' ? null : Number(axisRaw);
+
+        if (axis === null) {
+          Swal.showValidationMessage('Si la mica tiene cilindro debes capturar el eje.');
+          return false;
+        }
+
+        if (!Number.isFinite(axis)) {
+          Swal.showValidationMessage('El eje debe ser numérico.');
+          return false;
+        }
+
+        if (!Number.isInteger(axis)) {
+          Swal.showValidationMessage('El eje debe ser un número entero.');
+          return false;
+        }
+
+        if (axis < 1 || axis > 180) {
+          Swal.showValidationMessage('El eje debe estar entre 1 y 180.');
+          return false;
+        }
+
+        return axis;
+      }
+    });
+
+    if (!result.isConfirmed) return false;
+    return Number(result.value);
+  }
+
   const buildStockMaps = () => {
     stockById = new Map();
     reservedById = new Map();
@@ -215,6 +332,7 @@ export async function renderPOS(outlet) {
             name: String(v.name || v.code || `Tratamiento ${v.id || ''}`).trim()
           };
         }
+
         return { id: Number(v || 0), name: '' };
       })
       .filter(x => x.id > 0)
@@ -231,11 +349,34 @@ export async function renderPOS(outlet) {
       .join(',');
   };
 
+  const formatCustomRefractionText = (it) => {
+    const sphere = it?.sphere;
+    const cylinder = it?.cylinder;
+    const axis = it?.axis;
+
+    const parts = [];
+
+    if (sphere !== null && sphere !== undefined && String(sphere).trim() !== '') {
+      parts.push(`Esfera: ${sphere}`);
+    }
+
+    if (cylinder !== null && cylinder !== undefined && String(cylinder).trim() !== '') {
+      parts.push(`Cilindro: ${cylinder}`);
+    }
+
+    if (axis !== null && axis !== undefined && String(axis).trim() !== '') {
+      parts.push(`Eje: ${axis}`);
+    }
+
+    return parts.length ? parts.join(' · ') : '—';
+  };
+
   const makeCartKey = (itemLike) => {
     const pid = Number(itemLike?.id ?? itemLike?.product_id ?? 0);
     const variantId = Number(itemLike?.variant_id ?? 0);
     const axis = itemLike?.axis ?? '';
     const tKey = treatmentIdsKey(itemLike?.treatments ?? []);
+
     const customKey = itemLike?.custom_bisel
       ? JSON.stringify({
           sphere: itemLike.sphere ?? '',
@@ -245,7 +386,9 @@ export async function renderPOS(outlet) {
           frame_height: itemLike.frame_height ?? '',
           blank_height: itemLike.blank_height ?? '',
           observations: itemLike.observations ?? '',
-          treatments: normalizeTreatments(itemLike.treatments || []).map(t => t.id).sort((a, b) => a - b)
+          treatments: normalizeTreatments(itemLike.treatments || [])
+            .map(t => t.id)
+            .sort((a, b) => a - b)
         })
       : '';
 
@@ -270,6 +413,7 @@ export async function renderPOS(outlet) {
 
     const prodData = (prodRes.status === 'fulfilled') ? (prodRes.value?.data ?? []) : [];
     const invData = (invRes.status === 'fulfilled') ? (invRes.value?.data ?? []) : [];
+
     categoriesApi = (catRes.status === 'fulfilled') ? (catRes.value?.data ?? []) : [];
     treatmentsCatalog = (trRes.status === 'fulfilled' && Array.isArray(trRes.value?.data)) ? trRes.value.data : [];
     lensTypesCatalog = (ltRes.status === 'fulfilled' && Array.isArray(ltRes.value?.data)) ? ltRes.value.data : [];
@@ -283,6 +427,7 @@ export async function renderPOS(outlet) {
 
       products = inventory.map(r => {
         const p = r.product || {};
+
         return {
           ...p,
           treatments: normalizeTreatments(p.treatments || []),
@@ -302,10 +447,12 @@ export async function renderPOS(outlet) {
         category_code: p.category_code ?? getProductCategoryCode(p),
         category_name: p.category_name ?? getProductCategoryLabel(p),
       }));
+
       inventory = normalizeInventoryRows(invData);
     }
 
     buildStockMaps();
+
     DBG('products loaded', products.map(p => ({
       id: p.id,
       name: p.name,
@@ -315,6 +462,7 @@ export async function renderPOS(outlet) {
 
   async function loadCustomersIfNeeded() {
     if (isOptica) return;
+
     try {
       const { data } = await api.get('/opticas');
       customers = Array.isArray(data) ? data : [];
@@ -368,6 +516,7 @@ export async function renderPOS(outlet) {
 
       const url = URL.createObjectURL(blob);
       imageUrlCache.set(pid, url);
+
       return url;
     } catch (e) {
       console.error('POS image error', {
@@ -560,8 +709,10 @@ export async function renderPOS(outlet) {
   const checkoutHint = outlet.querySelector('#checkoutHint');
 
   const categoryContainer = outlet.querySelector('#posCategories');
+
   const renderCategoryButtons = () => {
     const allCats = categories();
+
     categoryContainer.innerHTML = `
       <button class="btn btn-sm ${selectedCategory === 'ALL' ? 'btn-brand' : 'btn-outline-brand'}" data-cat="ALL">Todos</button>
       ${allCats.map(c => `
@@ -577,19 +728,25 @@ export async function renderPOS(outlet) {
   const setCheckoutState = () => {
     const empty = cart.length === 0;
     btnCheckout.disabled = empty;
+
     if (checkoutHint) checkoutHint.style.display = 'none';
   };
 
   const matchesFilter = (p) => {
     const label = getProductCategoryLabel(p);
     const catOk = (selectedCategory === 'ALL') || (String(label) === String(selectedCategory));
+
     const q = searchQuery.trim().toLowerCase();
-    const qOk = !q || String(p.sku || '').toLowerCase().includes(q) || String(p.name || '').toLowerCase().includes(q);
+    const qOk = !q
+      || String(p.sku || '').toLowerCase().includes(q)
+      || String(p.name || '').toLowerCase().includes(q);
+
     return catOk && qOk;
   };
 
   function renderStockTableBody() {
     const tbody = outlet.querySelector('#posStockTbody');
+
     tbody.innerHTML = (inventory || []).map(r => {
       const p = r.product || r;
       const st = Number(r.stock ?? 0);
@@ -623,11 +780,11 @@ export async function renderPOS(outlet) {
       pageLength: 8,
       order: [[6, 'asc']],
       language: {
-        search: 'Buscar:',
-        lengthMenu: 'Mostrar _MENU_',
-        info: 'Mostrando _START_ a _END_ de _TOTAL_',
-        paginate: { previous: 'Anterior', next: 'Siguiente' },
-        zeroRecords: 'No hay registros'
+        search: "Buscar:",
+        lengthMenu: "Mostrar _MENU_",
+        info: "Mostrando _START_ a _END_ de _TOTAL_",
+        paginate: { previous: "Anterior", next: "Siguiente" },
+        zeroRecords: "No hay registros"
       }
     });
   }
@@ -636,13 +793,16 @@ export async function renderPOS(outlet) {
     if (window.$ && $.fn.dataTable && $.fn.DataTable.isDataTable('#tblPosStock')) {
       $('#tblPosStock').DataTable().destroy();
     }
+
     renderStockTableBody();
     ensureDataTable();
   }
 
   const treatmentsHtmlBlock = (arr) => {
     const rows = normalizeTreatments(arr || []);
+
     if (!rows.length) return '';
+
     return `
       <div class="small text-muted mt-1">
         Tratamientos: <b>${safe(rows.map(x => x.name || `#${x.id}`).join(', '))}</b>
@@ -733,19 +893,23 @@ export async function renderPOS(outlet) {
     const reserved = getReserved(p.id);
 
     const desc = (p.description ?? '').toString().trim();
-    const g = p.graduation || null;
-    const b = p.bisel || null;
     const catCode = getProductCategoryCode(p);
     const imgUrl = await getProtectedImageUrl(p);
 
+    const graduationData = {
+      sph: p.sphere ?? p.sph ?? null,
+      cyl: p.cylinder ?? p.cyl ?? null,
+      axis: p.axis ?? null,
+    };
+
     const graduacionHtml =
-      (catCode === 'MICAS' || catCode === 'LENTES CONTACTO')
-        ? `<div class="mt-3"><div class="fw-semibold">Graduación</div><div>${fmtGrad(g)}</div></div>`
+      (catCode === 'MICAS' || catCode === 'LENTES CONTACTO' || catCode === 'LENTES_CONTACTO')
+        ? `<div class="mt-3"><div class="fw-semibold">Graduación</div><div>${fmtGrad(graduationData)}</div></div>`
         : `<div class="mt-3"><div class="fw-semibold">Graduación</div><div>—</div></div>`;
 
     const biselHtml =
       (catCode === 'BISEL')
-        ? `<div class="mt-3"><div class="fw-semibold">Bisel</div><div>${fmtBisel(b)}</div></div>`
+        ? `<div class="mt-3"><div class="fw-semibold">Bisel</div><div>${fmtBisel(p.bisel || null)}</div></div>`
         : `<div class="mt-3"><div class="fw-semibold">Bisel</div><div>—</div></div>`;
 
     const buyPriceHtml = isOptica ? '' : `
@@ -798,6 +962,7 @@ export async function renderPOS(outlet) {
             <div>Categoría</div>
             <div class="fw-semibold">${safe(getProductCategoryLabel(p) || '—')}</div>
           </div>
+
           <div class="col-6">
             <div>Tipo</div>
             <div class="fw-semibold">${safe(p.type || '—')}</div>
@@ -807,7 +972,7 @@ export async function renderPOS(outlet) {
 
           <div class="col-6">
             <div>Proveedor</div>
-            <div class="fw-semibold">${safe(p.supplier || '—')}</div>
+            <div class="fw-semibold">${safe(p.supplier || p.supplier_name || '—')}</div>
           </div>
         </div>
 
@@ -836,7 +1001,9 @@ export async function renderPOS(outlet) {
   };
 
   const calcTotals = () => {
-    const subtotal = cart.reduce((a, i) => a + (Number(i.salePrice || i.sale_price || 0) * Number(i.qty || 0)), 0);
+    const subtotal = cart.reduce((a, i) => {
+      return a + (Number(i.salePrice || i.sale_price || 0) * Number(i.qty || 0));
+    }, 0);
 
     if (isOptica) {
       return { subtotal, discountAmount: 0, total: subtotal, orderDiscountPct: 0 };
@@ -846,21 +1013,27 @@ export async function renderPOS(outlet) {
       const pct = clampPct(orderDiscountPct);
       const discountAmount = subtotal * (pct / 100);
       const total = subtotal - discountAmount;
+
       return { subtotal, discountAmount, total, orderDiscountPct: pct };
     }
 
     let discountAmount = 0;
+
     for (const it of cart) {
       const pct = clampPct(it.itemDiscountPct || 0);
       discountAmount += (Number(it.salePrice || it.sale_price || 0) * Number(it.qty || 0)) * (pct / 100);
     }
+
     const total = subtotal - discountAmount;
+
     return { subtotal, discountAmount, total, orderDiscountPct: 0 };
   };
 
   const treatmentsHtml = (it) => {
     const arr = normalizeTreatments(it.treatments || []);
+
     if (!arr.length) return '';
+
     return `
       <div class="mt-1">
         Tratamientos: <b>${safe(arr.map(x => x.name || `#${x.id}`).join(', '))}</b>
@@ -877,9 +1050,7 @@ export async function renderPOS(outlet) {
 
     return `
       <div class="mt-1 border rounded p-2 bg-light">
-        <div><b>Esfera:</b> ${safe(it.sphere ?? '—')}</div>
-        <div><b>Cilindro:</b> ${safe(it.cylinder ?? '—')}</div>
-        <div><b>Eje:</b> ${safe(it.axis ?? '—')}</div>
+        <div><b>Refracción:</b> ${safe(formatCustomRefractionText(it))}</div>
         <div><b>Tipo de lente:</b> ${safe(it.lens_type_name || '—')}</div>
         <div><b>Altura de armazón:</b> ${safe(it.frame_height ?? '—')}</div>
         <div><b>Altura de oblea:</b> ${safe(it.blank_height ?? '—')}</div>
@@ -895,8 +1066,11 @@ export async function renderPOS(outlet) {
     if (cart.length === 0) {
       box.innerHTML = `<div class="text-muted">Carrito vacío</div>`;
       outlet.querySelector('#cartSubtotal').textContent = money(0);
+
       if (!isOptica) outlet.querySelector('#cartDiscount').textContent = money(0);
+
       outlet.querySelector('#cartTotal').textContent = money(0);
+
       setCheckoutState();
       return;
     }
@@ -904,10 +1078,13 @@ export async function renderPOS(outlet) {
     box.innerHTML = cart.map(it => {
       const isCustom = !!it.custom_bisel;
       const available = isCustom ? 999999 : getAvailable(it.id);
+
       const totalAlreadyInCartForProduct = isCustom ? 0 : getCartQtyForProduct(it.id);
+
       const remainingForThisLine = isCustom
         ? 999999
         : Math.max(0, available - (totalAlreadyInCartForProduct - Number(it.qty || 0)));
+
       const atLimit = !isCustom && Number(it.qty || 0) >= remainingForThisLine;
 
       const itemDisc = isOptica ? '' : `
@@ -929,10 +1106,18 @@ export async function renderPOS(outlet) {
         <div class="d-flex justify-content-between border rounded p-2 mb-2">
           <div style="min-width:0;">
             <div class="fw-semibold">${safe(it.name)}</div>
-            <div>${safe(it.sku || 'CUSTOM-BISEL')} · ${money(it.salePrice ?? it.sale_price ?? 0)} · ${isCustom ? 'Personalizado' : `Disponible: ${available}`}</div>
+            <div>
+              ${safe(it.sku || 'CUSTOM-BISEL')}
+              · ${money(it.salePrice ?? it.sale_price ?? 0)}
+              · ${isCustom ? 'Personalizado' : `Disponible: ${available}`}
+            </div>
+
             ${treatmentsHtml(it)}
+            ${!isCustom && it.axis != null ? `<div class="mt-1"><b>Eje:</b> ${safe(it.axis)}</div>` : ''}
             ${customBiselHtml(it)}
+
             ${!isCustom && available <= CRITICAL_STOCK && available > 0 ? `<div class="text-danger">Stock crítico</div>` : ``}
+
             ${itemDisc}
           </div>
 
@@ -947,8 +1132,11 @@ export async function renderPOS(outlet) {
     }).join('');
 
     const t = calcTotals();
+
     outlet.querySelector('#cartSubtotal').textContent = money(t.subtotal);
+
     if (!isOptica) outlet.querySelector('#cartDiscount').textContent = money(t.discountAmount);
+
     outlet.querySelector('#cartTotal').textContent = money(t.total);
 
     setCheckoutState();
@@ -967,6 +1155,7 @@ export async function renderPOS(outlet) {
           title: 'Sin tratamientos disponibles',
           text: 'Esta mica no tiene tratamientos configurados.'
         });
+
         return [];
       }
 
@@ -991,6 +1180,7 @@ export async function renderPOS(outlet) {
           return Array.from(document.querySelectorAll('.js-treatment-check:checked')).map(el => {
             const id = Number(el.value || 0);
             const row = rows.find(x => Number(x.id) === id);
+
             return {
               id,
               name: row?.name || row?.code || `Tratamiento ${id}`
@@ -1000,10 +1190,12 @@ export async function renderPOS(outlet) {
       });
 
       if (!result.isConfirmed) return null;
+
       return normalizeTreatments(result.value || []);
     } catch (err) {
       const msg = err?.response?.data?.message || err?.message || 'No se pudieron cargar tratamientos';
       await Swal.fire('Error', msg, 'error');
+
       return null;
     }
   }
@@ -1019,7 +1211,11 @@ export async function renderPOS(outlet) {
           const id = Number(t.id);
           return id === currentNum || !selectedIds.includes(id);
         })
-        .map(t => `<option value="${Number(t.id)}" ${Number(t.id) === currentNum ? 'selected' : ''}>${safe(t.name || t.code || `Tratamiento ${t.id}`)}</option>`)
+        .map(t => `
+          <option value="${Number(t.id)}" ${Number(t.id) === currentNum ? 'selected' : ''}>
+            ${safe(t.name || t.code || `Tratamiento ${t.id}`)}
+          </option>
+        `)
         .join('');
 
       return `
@@ -1034,6 +1230,7 @@ export async function renderPOS(outlet) {
     };
 
     if (!selectedIds.length) return makeSelect('');
+
     return selectedIds.map(id => makeSelect(id)).join('');
   }
 
@@ -1054,24 +1251,30 @@ export async function renderPOS(outlet) {
 
     const html = `
       <div class="text-start">
-        <div class="row g-3">
-          <div class="col-md-4">
-            <label class="form-label">Esfera</label>
-            <input id="customBiselSphere" type="number" step="0.01" class="form-control" placeholder="Ej. -2.00" />
-          </div>
+        <div class="mb-3">
+          <label class="form-label">Refracción</label>
 
-          <div class="col-md-4">
-            <label class="form-label">Cilindro</label>
-            <input id="customBiselCylinder" type="number" step="0.01" class="form-control" placeholder="Ej. -0.50" />
-          </div>
+          <div class="row g-2">
+            <div class="col-md-4">
+              <label class="form-label small mb-1">Esfera</label>
+              <input id="customBiselSphere" type="number" step="0.25" class="form-control" placeholder="Ej. -1.00" />
+            </div>
 
-          <div class="col-md-4">
-            <label class="form-label">Eje</label>
-            <input id="customBiselAxis" type="number" min="1" max="180" step="1" class="form-control" placeholder="Ej. 90" disabled />
+            <div class="col-md-4">
+              <label class="form-label small mb-1">Cilindro</label>
+              <input id="customBiselCylinder" type="number" step="0.25" class="form-control" placeholder="Ej. -0.75" />
+              <div class="form-text">Debe ser negativo.</div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label small mb-1">Eje</label>
+              <input id="customBiselAxis" type="number" min="1" max="180" step="1" class="form-control" placeholder="Ej. 90" disabled />
+              <div class="form-text">Solo si hay cilindro.</div>
+            </div>
           </div>
         </div>
 
-        <div class="mb-3 mt-3">
+        <div class="mb-3">
           <label class="form-label">Tratamiento</label>
           <div id="customBiselTreatmentsBox">
             ${renderCustomTreatmentRows([])}
@@ -1111,11 +1314,13 @@ export async function renderPOS(outlet) {
       box.querySelectorAll('.js-remove-custom-treatment').forEach(btn => {
         btn.onclick = () => {
           const rows = box.querySelectorAll('.js-custom-treatment-row');
+
           if (rows.length <= 1) {
             const sel = btn.closest('.js-custom-treatment-row')?.querySelector('.js-custom-treatment-select');
             if (sel) sel.value = '';
             return;
           }
+
           btn.closest('.js-custom-treatment-row')?.remove();
           refreshCustomTreatmentOptions();
         };
@@ -1148,7 +1353,11 @@ export async function renderPOS(outlet) {
               const id = Number(t.id);
               return id === current || !others.includes(id);
             })
-            .map(t => `<option value="${Number(t.id)}" ${Number(t.id) === current ? 'selected' : ''}>${safe(t.name || t.code || `Tratamiento ${t.id}`)}</option>`)
+            .map(t => `
+              <option value="${Number(t.id)}" ${Number(t.id) === current ? 'selected' : ''}>
+                ${safe(t.name || t.code || `Tratamiento ${t.id}`)}
+              </option>
+            `)
             .join('')}
         `;
       });
@@ -1159,22 +1368,42 @@ export async function renderPOS(outlet) {
     const recalcBlankHeight = () => {
       const frameInput = document.getElementById('customBiselFrameHeight');
       const out = document.getElementById('customBiselBlankHeightText');
+
       if (!frameInput || !out) return;
 
       const frameHeight = Number(frameInput.value || 0);
+
       if (!frameInput.value || Number.isNaN(frameHeight) || frameHeight <= 0) {
         out.textContent = '—';
         return;
       }
 
       const blankHeight = (frameHeight / 2) - 2;
+
       out.textContent = Number.isFinite(blankHeight) ? blankHeight.toFixed(2) : '—';
+    };
+
+    const syncAxisState = () => {
+      const cylInput = document.getElementById('customBiselCylinder');
+      const axisInput = document.getElementById('customBiselAxis');
+
+      if (!cylInput || !axisInput) return;
+
+      const raw = String(cylInput.value || '').trim();
+
+      if (!raw) {
+        axisInput.value = '';
+        axisInput.disabled = true;
+        return;
+      }
+
+      axisInput.disabled = false;
     };
 
     const result = await Swal.fire({
       title: 'Ordenar biselado personalizado',
       html,
-      width: 720,
+      width: 760,
       showCancelButton: true,
       confirmButtonText: 'Agregar al carrito',
       cancelButtonText: 'Cancelar',
@@ -1184,26 +1413,15 @@ export async function renderPOS(outlet) {
         const box = document.getElementById('customBiselTreatmentsBox');
         const frameInput = document.getElementById('customBiselFrameHeight');
         const cylinderInput = document.getElementById('customBiselCylinder');
-        const axisInput = document.getElementById('customBiselAxis');
-
-        const syncAxisState = () => {
-          if (!axisInput || !cylinderInput) return;
-
-          const cylinderRaw = String(cylinderInput.value || '').trim();
-          const hasCylinder = cylinderRaw !== '';
-
-          axisInput.disabled = !hasCylinder;
-
-          if (!hasCylinder) {
-            axisInput.value = '';
-          }
-        };
 
         addBtn?.addEventListener('click', () => {
           const wrapper = document.createElement('div');
           wrapper.innerHTML = renderCustomTreatmentRows([]);
+
           const row = wrapper.firstElementChild;
+
           if (row) box.appendChild(row);
+
           refreshCustomTreatmentOptions();
         });
 
@@ -1224,15 +1442,51 @@ export async function renderPOS(outlet) {
         const frameHeight = Number(document.getElementById('customBiselFrameHeight')?.value || 0);
         const observations = String(document.getElementById('customBiselObservations')?.value || '').trim();
 
-        const blankHeight = Number(((frameHeight / 2) - 2).toFixed(2));
+        const sphere = sphereRaw === '' ? null : Number(sphereRaw);
+        const cylinder = cylinderRaw === '' ? null : Number(cylinderRaw);
+        const axis = axisRaw === '' ? null : Number(axisRaw);
 
-        const selectedTreatments = Array.from(document.querySelectorAll('.js-custom-treatment-select'))
-          .map(el => Number(el.value || 0))
-          .filter(Boolean)
-          .map(id => {
-            const row = treatmentsCatalog.find(t => Number(t.id) === id);
-            return { id, name: row?.name || row?.code || `Tratamiento ${id}` };
-          });
+        if (sphereRaw !== '' && !Number.isFinite(sphere)) {
+          Swal.showValidationMessage('La esfera debe ser numérica.');
+          return false;
+        }
+
+        if (cylinderRaw !== '') {
+          if (!Number.isFinite(cylinder)) {
+            Swal.showValidationMessage('El cilindro debe ser numérico.');
+            return false;
+          }
+
+          if (cylinder >= 0) {
+            Swal.showValidationMessage('El cilindro debe ser negativo y no puede ser 0.');
+            return false;
+          }
+
+          if (axisRaw === '') {
+            Swal.showValidationMessage('Si capturas cilindro debes capturar el eje.');
+            return false;
+          }
+
+          if (!Number.isFinite(axis)) {
+            Swal.showValidationMessage('El eje debe ser numérico.');
+            return false;
+          }
+
+          if (!Number.isInteger(axis)) {
+            Swal.showValidationMessage('El eje debe ser un número entero.');
+            return false;
+          }
+
+          if (axis < 1 || axis > 180) {
+            Swal.showValidationMessage('El eje debe estar entre 1 y 180.');
+            return false;
+          }
+        }
+
+        if (cylinderRaw === '' && axisRaw !== '') {
+          Swal.showValidationMessage('No puedes capturar eje si no capturaste cilindro.');
+          return false;
+        }
 
         if (!lensTypeId) {
           Swal.showValidationMessage('Debes seleccionar tipo de lente.');
@@ -1244,56 +1498,38 @@ export async function renderPOS(outlet) {
           return false;
         }
 
+        const blankHeight = Number(((frameHeight / 2) - 2).toFixed(2));
+
         if (!blankHeight || Number.isNaN(blankHeight) || blankHeight <= 0) {
           Swal.showValidationMessage('La altura de la oblea calculada no es válida.');
           return false;
         }
 
-        const sphere = sphereRaw === '' ? null : Number(sphereRaw);
-        const cylinder = cylinderRaw === '' ? null : Number(cylinderRaw);
-        const axis = axisRaw === '' ? null : Number(axisRaw);
+        const selectedTreatments = Array.from(document.querySelectorAll('.js-custom-treatment-select'))
+          .map(el => Number(el.value || 0))
+          .filter(Boolean)
+          .map(id => {
+            const row = treatmentsCatalog.find(t => Number(t.id) === id);
 
-        if (sphereRaw !== '' && Number.isNaN(sphere)) {
-          Swal.showValidationMessage('La esfera debe ser numérica.');
-          return false;
-        }
-
-        if (cylinderRaw !== '' && Number.isNaN(cylinder)) {
-          Swal.showValidationMessage('El cilindro debe ser numérico.');
-          return false;
-        }
-
-        if (axisRaw !== '' && Number.isNaN(axis)) {
-          Swal.showValidationMessage('El eje debe ser numérico.');
-          return false;
-        }
-
-        if (cylinder !== null && cylinder >= 0) {
-          Swal.showValidationMessage('El cilindro debe ser negativo y no puede ser 0.');
-          return false;
-        }
-
-        if (cylinder !== null && axis === null) {
-          Swal.showValidationMessage('Si capturas cilindro debes capturar el eje.');
-          return false;
-        }
-
-        if (cylinder === null && axis !== null) {
-          Swal.showValidationMessage('Si capturas eje debes capturar cilindro.');
-          return false;
-        }
-
-        if (axis !== null && (axis < 1 || axis > 180)) {
-          Swal.showValidationMessage('El eje debe estar entre 1 y 180.');
-          return false;
-        }
+            return {
+              id,
+              name: row?.name || row?.code || `Tratamiento ${id}`
+            };
+          });
 
         const lensType = lensTypesCatalog.find(x => Number(x.id) === lensTypeId);
+
+        const refractionText = formatCustomRefractionText({
+          sphere,
+          cylinder,
+          axis
+        });
 
         return {
           sphere,
           cylinder,
           axis,
+          reflection: refractionText,
           lens_type_id: lensTypeId,
           lens_type_name: lensType?.name || lensType?.code || `Tipo ${lensTypeId}`,
           frame_height: frameHeight,
@@ -1317,13 +1553,18 @@ export async function renderPOS(outlet) {
       qty: 1,
       itemDiscountPct: 0,
       custom_bisel: true,
+
       sphere: cfg.sphere,
       cylinder: cfg.cylinder,
       axis: cfg.axis,
+      reflection: cfg.reflection,
+
       lens_type_id: cfg.lens_type_id,
       lens_type_name: cfg.lens_type_name,
+
       frame_height: cfg.frame_height,
       blank_height: cfg.blank_height,
+
       observations: cfg.observations || null,
       treatments: normalizeTreatments(cfg.treatments || []),
       item_notes: cfg.observations || null
@@ -1341,17 +1582,29 @@ export async function renderPOS(outlet) {
 
   const addToCart = async (p) => {
     const available = getAvailable(p.id);
+
     if (available <= 0) {
       warnNoStock(p.name);
       return false;
     }
 
     let selectedTreatments = normalizeTreatments(p.treatments || []);
+    let selectedAxis = p.axis ?? null;
 
     if (isOptica && isMicaProduct(p)) {
       const picked = await selectTreatmentsForProduct(p);
+
       if (picked === null) return false;
+
       selectedTreatments = picked;
+
+      const axisResult = await requestAxisForMica(p);
+
+      if (axisResult === false) return false;
+
+      if (axisResult !== null) {
+        selectedAxis = axisResult;
+      }
     }
 
     const baseItem = {
@@ -1361,6 +1614,7 @@ export async function renderPOS(outlet) {
       qty: 1,
       itemDiscountPct: 0,
       treatments: selectedTreatments,
+      axis: selectedAxis,
     };
 
     const cart_key = makeCartKey(baseItem);
@@ -1372,6 +1626,7 @@ export async function renderPOS(outlet) {
     }
 
     const found = cart.find(i => String(i.cart_key) === String(cart_key));
+
     if (found) {
       found.qty = Number(found.qty || 0) + 1;
     } else {
@@ -1404,20 +1659,29 @@ export async function renderPOS(outlet) {
     const getMeta = (c) => {
       const email = c?.email ? `· ${c.email}` : '';
       const phone = c?.phone ? `· ${c.phone}` : '';
+
       return `${email} ${phone}`.trim();
     };
 
-    const hide = () => { box.style.display = 'none'; box.innerHTML = ''; };
-    const show = () => { box.style.display = 'block'; };
+    const hide = () => {
+      box.style.display = 'none';
+      box.innerHTML = '';
+    };
+
+    const show = () => {
+      box.style.display = 'block';
+    };
 
     const pick = (c) => {
       const id = getId(c);
       const name = getName(c);
+
       if (!id) return;
 
       selectedCustomer = { id, name };
       hidden.value = String(id);
       input.value = name;
+
       hide();
     };
 
@@ -1436,6 +1700,7 @@ export async function renderPOS(outlet) {
           </button>
         `;
       }).join('');
+
       show();
     };
 
@@ -1444,34 +1709,51 @@ export async function renderPOS(outlet) {
       hidden.value = '';
 
       const q = String(input.value || '').trim().toLowerCase();
-      if (!q || customers.length === 0) { hide(); return []; }
+
+      if (!q || customers.length === 0) {
+        hide();
+        return [];
+      }
 
       const matches = customers
         .filter(c => {
           const name = getName(c).toLowerCase();
           const email = String(c?.email || '').toLowerCase();
           const phone = String(c?.phone || '').toLowerCase();
+
           return name.includes(q) || email.includes(q) || phone.includes(q);
         })
         .slice(0, 10);
 
-      if (matches.length === 0) { hide(); return []; }
+      if (matches.length === 0) {
+        hide();
+        return [];
+      }
+
       renderList(matches);
+
       return matches;
     };
 
     input.addEventListener('input', filterMatches);
-    input.addEventListener('focus', () => { if (String(input.value || '').trim()) filterMatches(); });
+
+    input.addEventListener('focus', () => {
+      if (String(input.value || '').trim()) filterMatches();
+    });
 
     const handlePickFromEvent = (e) => {
       const btn = e.target?.closest('[data-custid]');
+
       if (!btn) return;
+
       e.preventDefault();
 
       const id = Number(btn.dataset.custid || 0);
+
       if (!id) return;
 
       const c = customers.find(x => getId(x) === id);
+
       if (c) pick(c);
     };
 
@@ -1510,27 +1792,33 @@ export async function renderPOS(outlet) {
 
     if (incKey) {
       const it = cart.find(x => String(x.cart_key) === String(incKey));
+
       if (it) {
         if (!it.custom_bisel) {
           const available = getAvailable(it.id);
           const totalForProduct = getCartQtyForProduct(it.id);
+
           if (totalForProduct + 1 > available) {
             warnNoStock(it.name);
             return;
           }
         }
+
         it.qty++;
         renderCart();
       }
+
       return;
     }
 
     if (decKey) {
       const it = cart.find(x => String(x.cart_key) === String(decKey));
+
       if (it) {
         it.qty = Math.max(1, it.qty - 1);
         renderCart();
       }
+
       return;
     }
 
@@ -1565,6 +1853,7 @@ export async function renderPOS(outlet) {
       outlet.querySelectorAll('[data-itemdiscbox]').forEach(box => {
         box.classList.toggle('d-none', discountMode !== 'item');
       });
+
       outlet.querySelectorAll('[data-itemdisc]').forEach(inp => {
         inp.disabled = discountMode !== 'item';
       });
@@ -1579,31 +1868,40 @@ export async function renderPOS(outlet) {
 
     outlet.addEventListener('input', (e) => {
       const key = e.target?.dataset?.itemdisc;
+
       if (!key) return;
       if (discountMode !== 'item') return;
 
       const it = cart.find(x => String(x.cart_key) === String(key));
+
       if (!it) return;
+
       it.itemDiscountPct = clampPct(e.target.value);
+
       renderCart();
     });
   }
 
   outlet.querySelector('#btnCheckout')?.addEventListener('click', async (e) => {
     e.preventDefault();
+
     if (cart.length === 0) return;
 
     const productQtyMap = new Map();
+
     for (const it of cart) {
       if (it.custom_bisel) continue;
+
       const pid = Number(it.id);
       const prev = Number(productQtyMap.get(pid) || 0);
+
       productQtyMap.set(pid, prev + Number(it.qty || 0));
     }
 
     for (const [pid, qty] of productQtyMap.entries()) {
       const available = getAvailable(pid);
       const p = products.find(x => Number(x.id) === pid);
+
       if (qty > available) {
         warnNoStock(p?.name || 'Producto');
         return;
@@ -1612,6 +1910,7 @@ export async function renderPOS(outlet) {
 
     const methodKey = outlet.querySelector('#payMethod').value;
     const payment_method_id = resolvePaymentMethodId(methodKey);
+
     if (!payment_method_id) {
       Swal.fire('Método inválido', 'Configura PAYMENT_METHOD_ID en pos.js con los IDs reales.', 'warning');
       return;
@@ -1628,6 +1927,7 @@ export async function renderPOS(outlet) {
 
       if (!isOptica && discountMode === 'item') {
         const pct = clampPct(it.itemDiscountPct || 0);
+
         if (pct > 0) {
           item_discount_type = 'pct';
           item_discount_value = pct;
@@ -1650,12 +1950,18 @@ export async function renderPOS(outlet) {
         return {
           ...base,
           custom_bisel: true,
-          sphere: it.sphere ?? null,
-          cylinder: it.cylinder ?? null,
-          axis: it.axis ?? null,
+
+          reflection: it.reflection ?? formatCustomRefractionText(it),
+
+          sphere: it.sphere !== null && it.sphere !== undefined ? Number(it.sphere) : null,
+          cylinder: it.cylinder !== null && it.cylinder !== undefined ? Number(it.cylinder) : null,
+          axis: it.axis !== null && it.axis !== undefined ? Number(it.axis) : null,
+
           lens_type_id: it.lens_type_id ? Number(it.lens_type_id) : null,
+
           frame_height: it.frame_height != null ? Number(it.frame_height) : null,
           blank_height: it.blank_height != null ? Number(it.blank_height) : null,
+
           observations: it.observations ?? null,
           name: it.name ?? 'Biselado personalizado',
         };
@@ -1672,7 +1978,13 @@ export async function renderPOS(outlet) {
 
     const ok = await Swal.fire({
       title: 'Confirmar pedido',
-      html: `Óptica: <b>${safe(opticaUserContext.name || 'Óptica')}</b><br>Total: <b>${money(t.total)}</b><br>Pago: <b>${safe(methodKey)}</b>`,
+      html: `
+        Óptica: <b>${safe(opticaUserContext.name || 'Óptica')}</b>
+        <br>
+        Total: <b>${money(t.total)}</b>
+        <br>
+        Pago: <b>${safe(methodKey)}</b>
+      `,
       icon: 'question',
       showCancelButton: true,
       confirmButtonText: 'Crear'
@@ -1685,8 +1997,10 @@ export async function renderPOS(outlet) {
 
       cart = [];
       selectedCustomer = null;
+
       const hid = outlet.querySelector('#customerId');
       if (hid) hid.value = '';
+
       renderCart();
 
       await loadCore();
@@ -1697,10 +2011,13 @@ export async function renderPOS(outlet) {
       Swal.fire('Pedido registrado', 'Proceso completado.', 'success');
     } catch (err) {
       console.log(orderPayload);
+
       const msg = err?.response?.data?.message || err?.message || 'Error al registrar el pedido';
+
       const details = err?.response?.data?.errors
         ? Object.values(err.response.data.errors).flat().map(x => `• ${x}`).join('<br>')
         : '';
+
       Swal.fire('Error', details || msg, 'error');
     }
   });
