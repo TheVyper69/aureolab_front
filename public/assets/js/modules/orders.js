@@ -58,13 +58,22 @@ function safe(v) {
     .replaceAll('"', '&quot;');
 }
 
+function plain(v) {
+  return String(v ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
 function buildProductMap(products) {
   const m = new Map();
+
   (products || []).forEach(row => {
     const p = row?.product ?? row;
     if (!p?.id) return;
     m.set(String(p.id), p);
   });
+
   return m;
 }
 
@@ -86,6 +95,7 @@ function pickFirst(...values) {
       return v;
     }
   }
+
   return null;
 }
 
@@ -170,6 +180,7 @@ function badgeHtml(type, value) {
     const v = value || 'pendiente';
     return `<span class="badge ${PAYMENT_BADGE[v] || 'text-bg-secondary'}">${safe(PAYMENT_LABEL[v] || v)}</span>`;
   }
+
   const v = value || 'en_proceso';
   return `<span class="badge ${PROCESS_BADGE[v] || 'text-bg-secondary'}">${safe(PROCESS_LABEL[v] || v)}</span>`;
 }
@@ -352,6 +363,327 @@ function renderCustomBiselHtml(customBisel) {
       </div>
     </div>
   `;
+}
+
+function getPaymentMethodLabel(o) {
+  if (typeof o.paymentMethod === 'number' || String(o.paymentMethod).match(/^\d+$/)) {
+    return PM_ID_LABEL[Number(o.paymentMethod)] || `ID ${o.paymentMethod}`;
+  }
+
+  const key = String(o.paymentMethod || '').toLowerCase();
+
+  return PM_CODE_LABEL[key] || o.paymentMethod || '—';
+}
+
+function formatTicketDate(value) {
+  if (!value) return '—';
+
+  try {
+    return formatDateTime(value);
+  } catch (_e) {
+    return String(value);
+  }
+}
+
+function printOrderTicket(order, opticaName, paymentMethodLabel) {
+  const o = normalizeOrder(order);
+
+  const items = Array.isArray(o.items) ? o.items : [];
+
+  const itemRows = items.map(it => {
+    const qty = Number(it.qty || 0);
+    const unit = Number(it.price || 0);
+    const line = qty * unit;
+
+    const name = it.productName || it.product?.name || `Producto #${it.productId || '—'}`;
+    const sku = it.productSku || it.product?.sku || it.productId || '—';
+
+    const treatments = Array.isArray(it.treatments)
+      ? it.treatments
+      : [];
+
+    const treatmentsText = treatments.length
+      ? treatments.map(t => t?.name || t?.code || `#${t?.id ?? ''}`).filter(Boolean).join(', ')
+      : '';
+
+    const customBisel = normalizeCustomBisel(it.customBisel ?? it.custom_bisel ?? it.product?.custom_bisel ?? null);
+
+    const axisText = it.axis !== null && it.axis !== undefined && String(it.axis).trim() !== ''
+      ? `Eje: ${it.axis}`
+      : '';
+
+    const notesText = it.itemNotes
+      ? `Notas: ${it.itemNotes}`
+      : '';
+
+    const customText = customBisel
+      ? [
+          customBisel.reflection ? `Ref: ${customBisel.reflection}` : '',
+          customBisel.lensTypeName || customBisel.lensTypeCode ? `Lente: ${customBisel.lensTypeName || customBisel.lensTypeCode}` : '',
+          customBisel.frameHeight ? `Alt. armazón: ${customBisel.frameHeight}cm` : '',
+          customBisel.blankHeight ? `Alt. oblea: ${customBisel.blankHeight}cm` : '',
+          customBisel.observations ? `Obs: ${customBisel.observations}` : '',
+        ].filter(Boolean).join(' | ')
+      : '';
+
+    const details = [
+      treatmentsText ? `Tratamientos: ${treatmentsText}` : '',
+      axisText,
+      customText,
+      notesText
+    ].filter(Boolean);
+
+    return `
+      <div class="ticket-item">
+        <div class="item-main">
+          <div class="item-name">${plain(name)}</div>
+          <div class="item-sku">SKU: ${plain(sku)}</div>
+        </div>
+
+        ${details.length ? `
+          <div class="item-details">
+            ${details.map(d => `<div>${plain(d)}</div>`).join('')}
+          </div>
+        ` : ''}
+
+        <div class="item-line">
+          <span>${qty} x ${plain(money(unit))}</span>
+          <span>${plain(money(line))}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const paymentStatus = PAYMENT_LABEL[o.paymentStatus] || o.paymentStatus || '—';
+  const processStatus = PROCESS_LABEL[o.processStatus] || o.processStatus || '—';
+
+  const ticketHtml = `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Ticket pedido #${plain(o.id)}</title>
+
+        <style>
+          * {
+            box-sizing: border-box;
+          }
+
+          body {
+            margin: 0;
+            padding: 0;
+            background: #fff;
+            color: #000;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 12px;
+          }
+
+          .ticket {
+            width: 80mm;
+            max-width: 80mm;
+            padding: 8px;
+            margin: 0 auto;
+          }
+
+          .center {
+            text-align: center;
+          }
+
+          .title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 2px;
+          }
+
+          .subtitle {
+            font-size: 11px;
+            margin-bottom: 6px;
+          }
+
+          .line {
+            border-top: 1px dashed #000;
+            margin: 8px 0;
+          }
+
+          .row {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            margin: 2px 0;
+          }
+
+          .row span:first-child {
+            text-align: left;
+          }
+
+          .row span:last-child {
+            text-align: right;
+            font-weight: 700;
+          }
+
+          .ticket-item {
+            padding: 6px 0;
+            border-bottom: 1px dashed #999;
+          }
+
+          .item-name {
+            font-weight: 700;
+            word-break: break-word;
+          }
+
+          .item-sku {
+            font-size: 10px;
+            color: #333;
+            margin-top: 1px;
+            word-break: break-word;
+          }
+
+          .item-details {
+            font-size: 10px;
+            color: #111;
+            margin-top: 3px;
+            word-break: break-word;
+          }
+
+          .item-line {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            margin-top: 4px;
+          }
+
+          .item-line span:last-child {
+            font-weight: 700;
+          }
+
+          .total {
+            font-size: 15px;
+            font-weight: 700;
+          }
+
+          .footer {
+            margin-top: 10px;
+            font-size: 10px;
+            text-align: center;
+          }
+
+          @media print {
+            @page {
+              size: 80mm auto;
+              margin: 0;
+            }
+
+            html,
+            body {
+              width: 80mm;
+              margin: 0;
+              padding: 0;
+            }
+
+            .ticket {
+              width: 80mm;
+              max-width: 80mm;
+              margin: 0;
+            }
+          }
+        </style>
+      </head>
+
+      <body>
+        <div class="ticket">
+          <div class="center">
+            <div class="title">AUROLAB</div>
+            <div class="subtitle">Ticket de pedido</div>
+          </div>
+
+          <div class="line"></div>
+
+          <div class="row">
+            <span>Pedido:</span>
+            <span>#${plain(o.id)}</span>
+          </div>
+
+          <div class="row">
+            <span>Fecha:</span>
+            <span>${plain(formatTicketDate(o.date))}</span>
+          </div>
+
+          <div class="row">
+            <span>Óptica:</span>
+            <span>${plain(opticaName || '—')}</span>
+          </div>
+
+          <div class="row">
+            <span>Pago:</span>
+            <span>${plain(paymentMethodLabel || '—')}</span>
+          </div>
+
+          <div class="row">
+            <span>Estatus pago:</span>
+            <span>${plain(paymentStatus)}</span>
+          </div>
+
+          <div class="row">
+            <span>Proceso:</span>
+            <span>${plain(processStatus)}</span>
+          </div>
+
+          ${o.notes ? `
+            <div class="line"></div>
+            <div><b>Notas:</b></div>
+            <div>${plain(o.notes)}</div>
+          ` : ''}
+
+          <div class="line"></div>
+
+          ${itemRows || '<div class="center">Sin productos</div>'}
+
+          <div class="line"></div>
+
+          <div class="row">
+            <span>Subtotal:</span>
+            <span>${plain(money(o.subtotal || o.total || 0))}</span>
+          </div>
+
+          <div class="row total">
+            <span>Total:</span>
+            <span>${plain(money(o.total || 0))}</span>
+          </div>
+
+          <div class="line"></div>
+
+          <div class="footer">
+            Gracias por su pedido.<br>
+            Conserve este ticket para cualquier aclaración.
+          </div>
+        </div>
+
+        <script>
+          window.addEventListener('load', function () {
+            setTimeout(function () {
+              window.focus();
+              window.print();
+            }, 250);
+          });
+        </script>
+      </body>
+    </html>
+  `;
+
+  const printWindow = window.open('', '_blank', 'width=420,height=720');
+
+  if (!printWindow) {
+    Swal.fire(
+      'Ventana bloqueada',
+      'El navegador bloqueó la ventana de impresión. Permite ventanas emergentes para este sitio.',
+      'warning'
+    );
+    return;
+  }
+
+  printWindow.document.open();
+  printWindow.document.write(ticketHtml);
+  printWindow.document.close();
 }
 
 function showOrderedProductDetail(product, fallback = {}) {
@@ -571,13 +903,7 @@ async function showOrderDetail(order, productsMap, opticasById, ctx) {
     `;
   }).join('') || `<tr><td colspan="6" class="text-muted">Sin items</td></tr>`;
 
-  let pmLabel = '—';
-  if (typeof o.paymentMethod === 'number' || String(o.paymentMethod).match(/^\d+$/)) {
-    pmLabel = PM_ID_LABEL[Number(o.paymentMethod)] || `ID ${o.paymentMethod}`;
-  } else {
-    const key = String(o.paymentMethod || '').toLowerCase();
-    pmLabel = PM_CODE_LABEL[key] || o.paymentMethod || '—';
-  }
+  const pmLabel = getPaymentMethodLabel(o);
 
   const opticaControlsHtml = role === 'optica'
     ? `
@@ -694,6 +1020,12 @@ async function showOrderDetail(order, productsMap, opticasById, ctx) {
 
   const html = `
     <div class="text-start">
+      <div class="d-flex justify-content-end mb-3">
+        <button type="button" class="btn btn-sm btn-brand" id="btnPrintTicket">
+          Imprimir ticket
+        </button>
+      </div>
+
       <div class="row g-2">
         <div class="col-6">
           <div class="small text-muted">Pedido</div>
@@ -761,6 +1093,10 @@ async function showOrderDetail(order, productsMap, opticasById, ctx) {
       }
 
       const htmlContainer = Swal.getHtmlContainer();
+
+      htmlContainer?.querySelector('#btnPrintTicket')?.addEventListener('click', () => {
+        printOrderTicket(o, opticaName, pmLabel);
+      });
 
       htmlContainer?.querySelectorAll('[data-view-product]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -977,6 +1313,7 @@ async function renderOpticaOrders(outlet) {
       dt.destroy();
       dt = null;
     }
+
     dt = initDataTable('#tblMyOrders');
   }
 
@@ -1096,6 +1433,7 @@ async function renderEmployeeOrders(outlet) {
       dt.destroy();
       dt = null;
     }
+
     dt = initDataTable('#tblAllOrders');
   }
 
@@ -1104,12 +1442,14 @@ async function renderEmployeeOrders(outlet) {
     if (idx >= 0) {
       rows[idx] = normalizeOrder(updatedOrder);
     }
+
     renderTbody();
 
     if (dt) {
       dt.destroy();
       dt = null;
     }
+
     dt = initDataTable('#tblAllOrders');
   };
 
@@ -1117,7 +1457,9 @@ async function renderEmployeeOrders(outlet) {
     if (typeof o.paymentMethod === 'number' || String(o.paymentMethod).match(/^\d+$/)) {
       return PM_ID_LABEL[Number(o.paymentMethod)] || `ID ${o.paymentMethod}`;
     }
+
     const key = String(o.paymentMethod || '').toLowerCase();
+
     return PM_CODE_LABEL[key] || o.paymentMethod || '—';
   }
 
@@ -1199,6 +1541,7 @@ async function renderEmployeeOrders(outlet) {
 
 export async function renderOrders(outlet) {
   const role = authService.getRole();
+
   if (role === 'optica') {
     await renderOpticaOrders(outlet);
   } else {

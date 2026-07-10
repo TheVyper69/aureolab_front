@@ -1,0 +1,8 @@
+En una terminal de laravel
+
+php artisan tinker
+
+$user = App\Models\User::where('email', 'admin@aureolab.com')->first();
+
+$user->password = Illuminate\Support\Facades\Hash::make('aureolab123');
+$user->save();

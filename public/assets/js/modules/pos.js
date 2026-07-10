@@ -1,11 +1,11 @@
 // public/assets/js/pages/pos.js
-// FULL - actualizado para imágenes protegidas
-// + biselado personalizado sin producto visible en POS
-// + checkout compatible con OrdersController custom_bisel
-// + refracción en biselado personalizado: esfera, cilindro y eje
-// + eje solo habilitado si se captura cilindro
-// + validaciones ópticas de cilindro/eje
-// + al agregar mica con cilindro, pide eje antes de agregar al carrito
+// POS actualizado
+// - No abre modal de tratamientos al agregar mica
+// - No abre modal de eje al agregar mica
+// - Tratamientos vienen por default desde p.treatments
+// - Eje viene por default desde p.axis si existe
+// - Spinner morado #7E57C2 sin modal al crear pedido
+// - Conserva flujo de biselado personalizado
 
 import { api } from '../services/api.js';
 import { money } from '../utils/helpers.js';
@@ -21,8 +21,6 @@ export async function renderPOS(outlet) {
   const token = authService.getToken();
   const isOptica = role === 'optica';
 
-  DBG('renderPOS start', { role, isOptica, hasToken: !!token });
-
   const CRITICAL_STOCK = 3;
 
   const safe = (v) => String(v ?? '')
@@ -33,20 +31,70 @@ export async function renderPOS(outlet) {
 
   const clampPct = (n) => Math.min(100, Math.max(0, Number(n || 0)));
 
-  const warnNoStock = (name = 'Producto') => {
-    Swal.fire({
-      icon: 'warning',
-      title: 'Ya no hay en inventario',
-      text: `${name} no tiene stock suficiente.`,
-      confirmButtonText: 'Entendido'
-    });
+  const showPageSpinner = () => {
+    let overlay = document.getElementById('posPageSpinnerOverlay');
+
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'posPageSpinnerOverlay';
+
+      overlay.innerHTML = `
+        <div class="pos-page-spinner"></div>
+      `;
+
+      document.body.appendChild(overlay);
+    }
+
+    overlay.style.display = 'flex';
   };
 
-  const stockBadge = (available) => {
-    const st = Number(available ?? 0);
-    if (st <= 0) return `<span class="badge text-bg-secondary">Sin stock</span>`;
-    if (st <= CRITICAL_STOCK) return `<span class="badge text-bg-danger">Crítico</span>`;
-    return `<span class="badge text-bg-success">OK</span>`;
+  const hidePageSpinner = () => {
+    const overlay = document.getElementById('posPageSpinnerOverlay');
+
+    if (overlay) {
+      overlay.style.display = 'none';
+    }
+  };
+
+  if (!document.getElementById('posPageSpinnerStyles')) {
+    const style = document.createElement('style');
+    style.id = 'posPageSpinnerStyles';
+
+    style.textContent = `
+      #posPageSpinnerOverlay {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.55);
+        backdrop-filter: blur(2px);
+      }
+
+      .pos-page-spinner {
+        width: 58px;
+        height: 58px;
+        border: 6px solid rgba(126, 87, 194, 0.18);
+        border-top-color: #7E57C2;
+        border-radius: 50%;
+        animation: posSpin 0.75s linear infinite;
+      }
+
+      @keyframes posSpin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  const PAYMENT_METHOD_ID = {
+    cash: 1,
+    card: 2,
+    transfer: 3
   };
 
   const PLACEHOLDER_IMG =
@@ -71,36 +119,6 @@ export async function renderPOS(outlet) {
       </svg>
     `);
 
-  const fmtGrad = (g) => {
-    if (!g) return '—';
-    const sph = (g.sph ?? g.sphere ?? '').toString().trim();
-    const cyl = (g.cyl ?? g.cylinder ?? '').toString().trim();
-    const axis = (g.axis ?? '').toString().trim();
-
-    if (!sph && !cyl && !axis) return '—';
-
-    return `
-      SPH: <b>${safe(sph || '—')}</b>
-      · CYL: <b>${safe(cyl || '—')}</b>
-      ${axis ? `· Eje: <b>${safe(axis)}</b>` : ''}
-    `;
-  };
-
-  const fmtBisel = (b) => {
-    if (!b) return '—';
-    const axis = (b.axis ?? '').toString().trim();
-    const notes = (b.notes ?? '').toString().trim();
-    if (!axis && !notes) return '—';
-    return `Eje: <b>${safe(axis || '—')}</b>${notes ? `<br/>Notas: <b>${safe(notes)}</b>` : ''}`;
-  };
-
-  const PAYMENT_METHOD_ID = { cash: 1, card: 2, transfer: 3 };
-
-  const resolvePaymentMethodId = (methodKey) => {
-    const id = PAYMENT_METHOD_ID[String(methodKey || '').toLowerCase()];
-    return Number(id || 0);
-  };
-
   let products = [];
   let inventory = [];
   let categoriesApi = [];
@@ -113,16 +131,79 @@ export async function renderPOS(outlet) {
 
   let customers = [];
   let selectedCustomer = null;
-  let opticaUserContext = { id: null, name: null, optica_id: null };
+  let opticaUserContext = {
+    id: null,
+    name: null,
+    optica_id: null
+  };
+
+  let selectedCategory = 'ALL';
+  let searchQuery = '';
+  let discountMode = 'order';
+  let orderDiscountPct = 0;
 
   const categoryById = new Map();
 
+  const warnNoStock = (name = 'Producto') => {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Ya no hay en inventario',
+      text: `${name} no tiene stock suficiente.`,
+      confirmButtonText: 'Entendido'
+    });
+  };
+
+  const stockBadge = (available) => {
+    const st = Number(available ?? 0);
+
+    if (st <= 0) return `<span class="badge text-bg-secondary">Sin stock</span>`;
+    if (st <= CRITICAL_STOCK) return `<span class="badge text-bg-danger">Crítico</span>`;
+
+    return `<span class="badge text-bg-success">OK</span>`;
+  };
+
+  const resolvePaymentMethodId = (methodKey) => {
+    const id = PAYMENT_METHOD_ID[String(methodKey || '').toLowerCase()];
+    return Number(id || 0);
+  };
+
+  const normalizeTreatments = (arr) => {
+    return (Array.isArray(arr) ? arr : [])
+      .map(v => {
+        if (typeof v === 'object' && v !== null) {
+          return {
+            id: Number(v.id || 0),
+            name: String(v.name || v.code || `Tratamiento ${v.id || ''}`).trim()
+          };
+        }
+
+        return {
+          id: Number(v || 0),
+          name: ''
+        };
+      })
+      .filter(x => x.id > 0)
+      .reduce((acc, cur) => {
+        if (!acc.find(x => x.id === cur.id)) acc.push(cur);
+        return acc;
+      }, []);
+  };
+
+  const treatmentIdsKey = (arr) => {
+    return normalizeTreatments(arr)
+      .map(x => x.id)
+      .sort((a, b) => a - b)
+      .join(',');
+  };
+
   const normalizeInventoryRows = (arr) => {
     const rows = Array.isArray(arr) ? arr : [];
+
     return rows
       .map(r => {
         const p = r?.product || null;
         const pid = Number(p?.id ?? r?.product_id ?? r?.id ?? 0) || 0;
+
         if (!pid) return null;
 
         const st = Number(r?.stock ?? 0);
@@ -142,23 +223,26 @@ export async function renderPOS(outlet) {
   const buildCategoryMap = () => {
     categoryById.clear();
 
-    for (const c of (categoriesApi || [])) {
+    for (const c of categoriesApi || []) {
       const id = Number(c?.id || 0);
+
       if (!id) continue;
 
       categoryById.set(id, {
         id,
         code: String(c?.code || '').trim(),
-        name: String(c?.name || '').trim(),
+        name: String(c?.name || '').trim()
       });
     }
   };
 
   const getProductCategoryCode = (p) => {
     const direct = String(p?.category_code || p?.category || '').trim().toUpperCase();
+
     if (direct) return direct;
 
     const cid = Number(p?.category_id || 0);
+
     if (cid && categoryById.has(cid)) {
       return String(categoryById.get(cid)?.code || '').trim().toUpperCase();
     }
@@ -172,6 +256,7 @@ export async function renderPOS(outlet) {
     if (p?.category) return String(p.category);
 
     const cid = Number(p?.category_id || 0);
+
     if (cid && categoryById.has(cid)) {
       return categoryById.get(cid)?.name || '';
     }
@@ -179,134 +264,18 @@ export async function renderPOS(outlet) {
     return '';
   };
 
-  const isMicaProduct = (p) => {
-    const code = String(getProductCategoryCode(p) || '').trim().toUpperCase();
-    const label = String(getProductCategoryLabel(p) || '').trim().toUpperCase();
-
-    return code === 'MICAS'
-      || code === 'MICA'
-      || label === 'MICAS'
-      || label === 'MICA'
-      || label.includes('MICA');
-  };
-
-  const opticalValue = (p, ...keys) => {
-    for (const key of keys) {
-      const v = p?.[key];
-      if (v !== null && v !== undefined && String(v).trim() !== '') {
-        return v;
-      }
-    }
-
-    return null;
-  };
-
-  const getProductSphere = (p) => opticalValue(p, 'sphere', 'sph', 'esfera');
-  const getProductCylinder = (p) => opticalValue(p, 'cylinder', 'cyl', 'cilindro');
-
-  const micaHasCylinder = (p) => {
-    if (!isMicaProduct(p)) return false;
-
-    const raw = getProductCylinder(p);
-    if (raw === null) return false;
-
-    const cylinder = Number(raw);
-    return Number.isFinite(cylinder) && cylinder !== 0;
-  };
-
-  async function requestAxisForMica(p) {
-    if (!isOptica || !micaHasCylinder(p)) return null;
-
-    const sphereRaw = getProductSphere(p);
-    const cylinderRaw = getProductCylinder(p);
-    const cylinder = Number(cylinderRaw);
-
-    if (!Number.isFinite(cylinder)) {
-      await Swal.fire('Graduación inválida', 'El cilindro de la mica no es numérico.', 'error');
-      return false;
-    }
-
-    if (cylinder >= 0) {
-      await Swal.fire('Graduación inválida', 'El cilindro de la mica debe ser negativo y no puede ser 0.', 'error');
-      return false;
-    }
-
-    const result = await Swal.fire({
-      title: 'Capturar eje de la mica',
-      html: `
-        <div class="text-start">
-          <div class="alert alert-light border mb-3">
-            <div><b>${safe(p?.name || 'Mica')}</b></div>
-            <div class="small text-muted">SKU: ${safe(p?.sku || '—')}</div>
-          </div>
-
-          <div class="row g-3">
-            <div class="col-md-4">
-              <label class="form-label">Esfera</label>
-              <input class="form-control" value="${safe(sphereRaw ?? '—')}" disabled />
-            </div>
-
-            <div class="col-md-4">
-              <label class="form-label">Cilindro</label>
-              <input class="form-control" value="${safe(cylinderRaw ?? '—')}" disabled />
-            </div>
-
-            <div class="col-md-4">
-              <label class="form-label">Eje</label>
-              <input id="micaAxisInput" type="number" min="1" max="180" step="1" class="form-control" placeholder="Ej. 90" />
-              <div class="form-text">Obligatorio porque la mica tiene cilindro.</div>
-            </div>
-          </div>
-        </div>
-      `,
-      width: 620,
-      showCancelButton: true,
-      confirmButtonText: 'Continuar',
-      cancelButtonText: 'Cancelar',
-      focusConfirm: false,
-      didOpen: () => {
-        const axisInput = document.getElementById('micaAxisInput');
-        axisInput?.focus();
-      },
-      preConfirm: () => {
-        const axisRaw = String(document.getElementById('micaAxisInput')?.value || '').trim();
-        const axis = axisRaw === '' ? null : Number(axisRaw);
-
-        if (axis === null) {
-          Swal.showValidationMessage('Si la mica tiene cilindro debes capturar el eje.');
-          return false;
-        }
-
-        if (!Number.isFinite(axis)) {
-          Swal.showValidationMessage('El eje debe ser numérico.');
-          return false;
-        }
-
-        if (!Number.isInteger(axis)) {
-          Swal.showValidationMessage('El eje debe ser un número entero.');
-          return false;
-        }
-
-        if (axis < 1 || axis > 180) {
-          Swal.showValidationMessage('El eje debe estar entre 1 y 180.');
-          return false;
-        }
-
-        return axis;
-      }
-    });
-
-    if (!result.isConfirmed) return false;
-    return Number(result.value);
-  }
+  const categories = () => Array.from(
+    new Set((products || []).map(p => getProductCategoryLabel(p)).filter(Boolean))
+  ).sort();
 
   const buildStockMaps = () => {
     stockById = new Map();
     reservedById = new Map();
     availableById = new Map();
 
-    for (const r of (inventory || [])) {
+    for (const r of inventory || []) {
       const pid = Number(r?.product?.id ?? r?.product_id ?? r?.id ?? 0);
+
       if (!pid) continue;
 
       const st = Number(r?.stock ?? 0);
@@ -323,30 +292,10 @@ export async function renderPOS(outlet) {
   const getStockTotal = (productId) => Number(stockById.get(Number(productId)) ?? 0);
   const getReserved = (productId) => Number(reservedById.get(Number(productId)) ?? 0);
 
-  const normalizeTreatments = (arr) => {
-    return (Array.isArray(arr) ? arr : [])
-      .map(v => {
-        if (typeof v === 'object' && v !== null) {
-          return {
-            id: Number(v.id || 0),
-            name: String(v.name || v.code || `Tratamiento ${v.id || ''}`).trim()
-          };
-        }
-
-        return { id: Number(v || 0), name: '' };
-      })
-      .filter(x => x.id > 0)
-      .reduce((acc, cur) => {
-        if (!acc.find(x => x.id === cur.id)) acc.push(cur);
-        return acc;
-      }, []);
-  };
-
-  const treatmentIdsKey = (arr) => {
-    return normalizeTreatments(arr)
-      .map(x => x.id)
-      .sort((a, b) => a - b)
-      .join(',');
+  const getCartQtyForProduct = (productId) => {
+    return cart
+      .filter(x => Number(x.id) === Number(productId) && !x.custom_bisel)
+      .reduce((acc, x) => acc + Number(x.qty || 0), 0);
   };
 
   const formatCustomRefractionText = (it) => {
@@ -395,32 +344,27 @@ export async function renderPOS(outlet) {
     return `${pid}::${variantId}::${axis}::${tKey}::${customKey}`;
   };
 
-  const getCartQtyForProduct = (productId) =>
-    cart
-      .filter(x => Number(x.id) === Number(productId) && !x.custom_bisel)
-      .reduce((acc, x) => acc + Number(x.qty || 0), 0);
-
   async function loadCore() {
-    DBG('loadCore -> /products + /inventory + /categories + /treatments + /lens-types');
+    DBG('loadCore');
 
     const [prodRes, invRes, catRes, trRes, ltRes] = await Promise.allSettled([
       api.get('/products'),
       api.get('/inventory'),
       api.get('/categories'),
       api.get('/treatments'),
-      api.get('/lens-types'),
+      api.get('/lens-types')
     ]);
 
-    const prodData = (prodRes.status === 'fulfilled') ? (prodRes.value?.data ?? []) : [];
-    const invData = (invRes.status === 'fulfilled') ? (invRes.value?.data ?? []) : [];
+    const prodData = prodRes.status === 'fulfilled' ? (prodRes.value?.data ?? []) : [];
+    const invData = invRes.status === 'fulfilled' ? (invRes.value?.data ?? []) : [];
 
-    categoriesApi = (catRes.status === 'fulfilled') ? (catRes.value?.data ?? []) : [];
-    treatmentsCatalog = (trRes.status === 'fulfilled' && Array.isArray(trRes.value?.data)) ? trRes.value.data : [];
-    lensTypesCatalog = (ltRes.status === 'fulfilled' && Array.isArray(ltRes.value?.data)) ? ltRes.value.data : [];
+    categoriesApi = catRes.status === 'fulfilled' ? (catRes.value?.data ?? []) : [];
+    treatmentsCatalog = trRes.status === 'fulfilled' && Array.isArray(trRes.value?.data) ? trRes.value.data : [];
+    lensTypesCatalog = ltRes.status === 'fulfilled' && Array.isArray(ltRes.value?.data) ? ltRes.value.data : [];
 
     buildCategoryMap();
 
-    const productsLooksLikeInventory = Array.isArray(prodData) && prodData[0] && (prodData[0].product !== undefined);
+    const productsLooksLikeInventory = Array.isArray(prodData) && prodData[0] && prodData[0].product !== undefined;
 
     if (productsLooksLikeInventory) {
       inventory = normalizeInventoryRows(prodData);
@@ -436,7 +380,7 @@ export async function renderPOS(outlet) {
           category_name: p.category_name ?? getProductCategoryLabel(p),
           __stock: r.stock,
           __reserved: r.reserved,
-          __available: r.available,
+          __available: r.available
         };
       });
     } else {
@@ -445,19 +389,13 @@ export async function renderPOS(outlet) {
         treatments: normalizeTreatments(p.treatments || []),
         category: p.category ?? p.category_name ?? getProductCategoryLabel(p),
         category_code: p.category_code ?? getProductCategoryCode(p),
-        category_name: p.category_name ?? getProductCategoryLabel(p),
+        category_name: p.category_name ?? getProductCategoryLabel(p)
       }));
 
       inventory = normalizeInventoryRows(invData);
     }
 
     buildStockMaps();
-
-    DBG('products loaded', products.map(p => ({
-      id: p.id,
-      name: p.name,
-      imageUrl: p.imageUrl
-    })));
   }
 
   async function loadCustomersIfNeeded() {
@@ -485,17 +423,20 @@ export async function renderPOS(outlet) {
       };
 
       const box = outlet.querySelector('#opticaCustomerBox');
+
       if (box) box.textContent = opticaUserContext.name || 'Óptica';
     } catch (_e) {
-      opticaUserContext = { id: null, name: null, optica_id: null };
+      opticaUserContext = {
+        id: null,
+        name: null,
+        optica_id: null
+      };
     }
   }
 
-  await loadCore();
-  await Promise.all([loadCustomersIfNeeded(), loadOpticaUserContextIfNeeded()]);
-
   async function getProtectedImageUrl(product) {
     const pid = Number(product?.id || 0);
+
     if (!pid) return PLACEHOLDER_IMG;
 
     if (imageUrlCache.has(pid)) return imageUrlCache.get(pid);
@@ -526,6 +467,7 @@ export async function renderPOS(outlet) {
       });
 
       imageUrlCache.set(pid, PLACEHOLDER_IMG);
+
       return PLACEHOLDER_IMG;
     }
   }
@@ -552,14 +494,11 @@ export async function renderPOS(outlet) {
     await Promise.allSettled(tasks);
   }
 
-  const categories = () => Array.from(
-    new Set((products || []).map(p => getProductCategoryLabel(p)).filter(Boolean))
-  ).sort();
-
-  let selectedCategory = 'ALL';
-  let searchQuery = '';
-  let discountMode = 'order';
-  let orderDiscountPct = 0;
+  await loadCore();
+  await Promise.all([
+    loadCustomersIfNeeded(),
+    loadOpticaUserContextIfNeeded()
+  ]);
 
   outlet.innerHTML = `
     <div class="d-flex align-items-center justify-content-between mb-3">
@@ -613,11 +552,13 @@ export async function renderPOS(outlet) {
             <h6 class="mb-0">Productos</h6>
             <div id="posCount"></div>
           </div>
+
           <div id="productsGrid" class="row g-3"></div>
         </div>
 
         <div class="card p-3 mt-3">
           <h6 class="mb-0">Stock disponible</h6>
+
           <div class="table-responsive mt-2">
             <table class="table table-sm align-middle" id="tblPosStock" style="width:100%">
               <thead>
@@ -633,6 +574,7 @@ export async function renderPOS(outlet) {
                   <th class="text-end">Precio</th>
                 </tr>
               </thead>
+
               <tbody id="posStockTbody"></tbody>
             </table>
           </div>
@@ -642,7 +584,9 @@ export async function renderPOS(outlet) {
       <div class="col-lg-5">
         <div class="card p-3">
           <h6>Carrito</h6>
+
           <div id="cartBox" class="mt-2"></div>
+
           <hr/>
 
           <div class="d-flex justify-content-between">
@@ -650,12 +594,16 @@ export async function renderPOS(outlet) {
             <div class="fw-bold" id="cartSubtotal">$0</div>
           </div>
 
-          ${isOptica ? '' : `
-            <div class="d-flex justify-content-between">
-              <div>Descuento</div>
-              <div class="fw-bold" id="cartDiscount">$0</div>
-            </div>
-          `}
+          ${
+            isOptica
+              ? ''
+              : `
+                <div class="d-flex justify-content-between">
+                  <div>Descuento</div>
+                  <div class="fw-bold" id="cartDiscount">$0</div>
+                </div>
+              `
+          }
 
           <div class="d-flex justify-content-between">
             <div>Total</div>
@@ -664,6 +612,7 @@ export async function renderPOS(outlet) {
 
           <div class="mt-3">
             <label class="form-label">Método de pago</label>
+
             <select id="payMethod" class="form-select">
               <option value="cash">Efectivo</option>
               <option value="card">Tarjeta</option>
@@ -686,6 +635,7 @@ export async function renderPOS(outlet) {
                   <label class="form-label">Cliente</label>
                   <input type="hidden" id="customerId" value="" />
                   <input id="customerName" class="form-control" placeholder="Buscar óptica..." autocomplete="off">
+
                   <div id="customerSuggest" class="list-group position-absolute w-100"
                        style="z-index:2000; display:none; max-height:240px; overflow:auto;">
                   </div>
@@ -707,19 +657,7 @@ export async function renderPOS(outlet) {
   const countEl = outlet.querySelector('#posCount');
   const btnCheckout = outlet.querySelector('#btnCheckout');
   const checkoutHint = outlet.querySelector('#checkoutHint');
-
   const categoryContainer = outlet.querySelector('#posCategories');
-
-  const renderCategoryButtons = () => {
-    const allCats = categories();
-
-    categoryContainer.innerHTML = `
-      <button class="btn btn-sm ${selectedCategory === 'ALL' ? 'btn-brand' : 'btn-outline-brand'}" data-cat="ALL">Todos</button>
-      ${allCats.map(c => `
-        <button class="btn btn-sm ${selectedCategory === c ? 'btn-brand' : 'btn-outline-brand'}" data-cat="${safe(c)}">${safe(c)}</button>
-      `).join('')}
-    `;
-  };
 
   const discountModeSel = isOptica ? null : outlet.querySelector('#discountMode');
   const orderDiscountInp = isOptica ? null : outlet.querySelector('#orderDiscount');
@@ -727,21 +665,51 @@ export async function renderPOS(outlet) {
 
   const setCheckoutState = () => {
     const empty = cart.length === 0;
+
     btnCheckout.disabled = empty;
 
     if (checkoutHint) checkoutHint.style.display = 'none';
   };
 
+  const renderCategoryButtons = () => {
+    const allCats = categories();
+
+    categoryContainer.innerHTML = `
+      <button class="btn btn-sm ${selectedCategory === 'ALL' ? 'btn-brand' : 'btn-outline-brand'}" data-cat="ALL">
+        Todos
+      </button>
+
+      ${allCats.map(c => `
+        <button class="btn btn-sm ${selectedCategory === c ? 'btn-brand' : 'btn-outline-brand'}" data-cat="${safe(c)}">
+          ${safe(c)}
+        </button>
+      `).join('')}
+    `;
+  };
+
   const matchesFilter = (p) => {
     const label = getProductCategoryLabel(p);
-    const catOk = (selectedCategory === 'ALL') || (String(label) === String(selectedCategory));
+    const catOk = selectedCategory === 'ALL' || String(label) === String(selectedCategory);
 
     const q = searchQuery.trim().toLowerCase();
+
     const qOk = !q
       || String(p.sku || '').toLowerCase().includes(q)
       || String(p.name || '').toLowerCase().includes(q);
 
     return catOk && qOk;
+  };
+
+  const treatmentsHtmlBlock = (arr) => {
+    const rows = normalizeTreatments(arr || []);
+
+    if (!rows.length) return '';
+
+    return `
+      <div class="small text-muted mt-1">
+        Tratamientos: <b>${safe(rows.map(x => x.name || `#${x.id}`).join(', '))}</b>
+      </div>
+    `;
   };
 
   function renderStockTableBody() {
@@ -780,11 +748,14 @@ export async function renderPOS(outlet) {
       pageLength: 8,
       order: [[6, 'asc']],
       language: {
-        search: "Buscar:",
-        lengthMenu: "Mostrar _MENU_",
-        info: "Mostrando _START_ a _END_ de _TOTAL_",
-        paginate: { previous: "Anterior", next: "Siguiente" },
-        zeroRecords: "No hay registros"
+        search: 'Buscar:',
+        lengthMenu: 'Mostrar _MENU_',
+        info: 'Mostrando _START_ a _END_ de _TOTAL_',
+        paginate: {
+          previous: 'Anterior',
+          next: 'Siguiente'
+        },
+        zeroRecords: 'No hay registros'
       }
     });
   }
@@ -798,28 +769,18 @@ export async function renderPOS(outlet) {
     ensureDataTable();
   }
 
-  const treatmentsHtmlBlock = (arr) => {
-    const rows = normalizeTreatments(arr || []);
-
-    if (!rows.length) return '';
-
-    return `
-      <div class="small text-muted mt-1">
-        Tratamientos: <b>${safe(rows.map(x => x.name || `#${x.id}`).join(', '))}</b>
-      </div>
-    `;
-  };
-
   const renderCards = async () => {
     const filtered = (products || []).filter(matchesFilter);
+
     countEl.textContent = `${filtered.length} producto(s)`;
 
-    if (filtered.length === 0) {
+    if (!filtered.length) {
       grid.innerHTML = `
         <div class="col-12">
           <div class="alert alert-light border mb-0">No hay productos con ese filtro.</div>
         </div>
       `;
+
       return;
     }
 
@@ -846,6 +807,7 @@ export async function renderPOS(outlet) {
                 <div class="fw-semibold" style="white-space: normal; overflow: visible;">
                   ${safe(p.name)}
                 </div>
+
                 <div class="text-end">
                   <div>${safe(p.sku)}</div>
                   <div>${stockBadge(available)}</div>
@@ -861,13 +823,17 @@ export async function renderPOS(outlet) {
 
               <div class="mt-2 d-flex align-items-center justify-content-between">
                 <div class="fw-bold">${money(p.salePrice ?? p.sale_price ?? 0)}</div>
+
                 <div class="${critical ? 'text-danger' : ''}">
                   Disponible: <b>${available}</b>
                 </div>
               </div>
 
               <div class="mt-3 d-flex gap-2">
-                <button type="button" class="btn btn-brand flex-grow-1" data-add="${p.id}" ${disabled}>Agregar</button>
+                <button type="button" class="btn btn-brand flex-grow-1" data-add="${p.id}" ${disabled}>
+                  Agregar
+                </button>
+
                 <button type="button" class="btn btn-outline-brand btn-sm" data-details="${p.id}" title="Ver detalles">
                   Detalles
                 </button>
@@ -876,7 +842,9 @@ export async function renderPOS(outlet) {
               ${
                 available <= 0
                   ? ``
-                  : (critical ? `<div class="mt-2 text-danger">Stock crítico</div>` : ``)
+                  : critical
+                    ? `<div class="mt-2 text-danger">Stock crítico</div>`
+                    : ``
               }
             </div>
           </div>
@@ -891,49 +859,13 @@ export async function renderPOS(outlet) {
     const available = getAvailable(p.id);
     const totalStock = getStockTotal(p.id);
     const reserved = getReserved(p.id);
-
-    const desc = (p.description ?? '').toString().trim();
-    const catCode = getProductCategoryCode(p);
     const imgUrl = await getProtectedImageUrl(p);
 
-    const graduationData = {
-      sph: p.sphere ?? p.sph ?? null,
-      cyl: p.cylinder ?? p.cyl ?? null,
-      axis: p.axis ?? null,
-    };
+    const desc = String(p.description ?? '').trim();
 
-    const graduacionHtml =
-      (catCode === 'MICAS' || catCode === 'LENTES CONTACTO' || catCode === 'LENTES_CONTACTO')
-        ? `<div class="mt-3"><div class="fw-semibold">Graduación</div><div>${fmtGrad(graduationData)}</div></div>`
-        : `<div class="mt-3"><div class="fw-semibold">Graduación</div><div>—</div></div>`;
-
-    const biselHtml =
-      (catCode === 'BISEL')
-        ? `<div class="mt-3"><div class="fw-semibold">Bisel</div><div>${fmtBisel(p.bisel || null)}</div></div>`
-        : `<div class="mt-3"><div class="fw-semibold">Bisel</div><div>—</div></div>`;
-
-    const buyPriceHtml = isOptica ? '' : `
-      <div class="col-6">
-        <div>Precio compra</div>
-        <div class="fw-semibold">${money(p.buyPrice ?? p.buy_price ?? 0)}</div>
-      </div>
-    `;
-
-    const treatmentsHtml = normalizeTreatments(p.treatments || []).length
-      ? `
-        <div class="mt-3">
-          <div class="fw-semibold">Tratamientos</div>
-          <div class="small text-muted">
-            ${safe(normalizeTreatments(p.treatments || []).map(x => x.name || `#${x.id}`).join(', '))}
-          </div>
-        </div>
-      `
-      : `
-        <div class="mt-3">
-          <div class="fw-semibold">Tratamientos</div>
-          <div class="small text-muted">—</div>
-        </div>
-      `;
+    const treatmentsText = normalizeTreatments(p.treatments || [])
+      .map(x => x.name || `#${x.id}`)
+      .join(', ');
 
     const html = `
       <div class="text-start">
@@ -943,14 +875,18 @@ export async function renderPOS(outlet) {
             alt="${safe(p.name)}"
             style="width:120px;height:120px;object-fit:cover;border-radius:12px;border:1px solid #e9ecef;"
           />
+
           <div style="min-width:0;">
             <div class="fw-bold">${safe(p.name)}</div>
             <div>${safe(p.sku)}</div>
-            <div class="mt-1">${stockBadge(available)}
+
+            <div class="mt-1">
+              ${stockBadge(available)}
               <span class="ms-2">
                 Disponible: <b>${available}</b> · Stock: ${totalStock} · Res: ${reserved}
               </span>
             </div>
+
             <div class="mt-2 fw-bold">${money(p.salePrice ?? p.sale_price ?? 0)}</div>
           </div>
         </div>
@@ -968,12 +904,21 @@ export async function renderPOS(outlet) {
             <div class="fw-semibold">${safe(p.type || '—')}</div>
           </div>
 
-          ${buyPriceHtml}
-
           <div class="col-6">
             <div>Proveedor</div>
             <div class="fw-semibold">${safe(p.supplier || p.supplier_name || '—')}</div>
           </div>
+
+          ${
+            isOptica
+              ? ''
+              : `
+                <div class="col-6">
+                  <div>Precio compra</div>
+                  <div class="fw-semibold">${money(p.buyPrice ?? p.buy_price ?? 0)}</div>
+                </div>
+              `
+          }
         </div>
 
         <div class="mt-3">
@@ -981,9 +926,23 @@ export async function renderPOS(outlet) {
           <div>${desc ? safe(desc) : '—'}</div>
         </div>
 
-        ${treatmentsHtml}
-        ${graduacionHtml}
-        ${biselHtml}
+        <div class="mt-3">
+          <div class="fw-semibold">Tratamientos</div>
+          <div class="small text-muted">${safe(treatmentsText || '—')}</div>
+        </div>
+
+        <div class="mt-3">
+          <div class="fw-semibold">Graduación</div>
+          <div>
+            SPH: <b>${safe(p.sphere ?? p.sph ?? '—')}</b>
+            · CYL: <b>${safe(p.cylinder ?? p.cyl ?? '—')}</b>
+            ${
+              p.axis !== null && p.axis !== undefined && String(p.axis).trim() !== ''
+                ? `· Eje: <b>${safe(p.axis)}</b>`
+                : ''
+            }
+          </div>
+        </div>
       </div>
     `;
 
@@ -1002,11 +961,16 @@ export async function renderPOS(outlet) {
 
   const calcTotals = () => {
     const subtotal = cart.reduce((a, i) => {
-      return a + (Number(i.salePrice || i.sale_price || 0) * Number(i.qty || 0));
+      return a + Number(i.salePrice ?? i.sale_price ?? 0) * Number(i.qty || 0);
     }, 0);
 
     if (isOptica) {
-      return { subtotal, discountAmount: 0, total: subtotal, orderDiscountPct: 0 };
+      return {
+        subtotal,
+        discountAmount: 0,
+        total: subtotal,
+        orderDiscountPct: 0
+      };
     }
 
     if (discountMode === 'order') {
@@ -1014,19 +978,27 @@ export async function renderPOS(outlet) {
       const discountAmount = subtotal * (pct / 100);
       const total = subtotal - discountAmount;
 
-      return { subtotal, discountAmount, total, orderDiscountPct: pct };
+      return {
+        subtotal,
+        discountAmount,
+        total,
+        orderDiscountPct: pct
+      };
     }
 
     let discountAmount = 0;
 
     for (const it of cart) {
       const pct = clampPct(it.itemDiscountPct || 0);
-      discountAmount += (Number(it.salePrice || it.sale_price || 0) * Number(it.qty || 0)) * (pct / 100);
+      discountAmount += Number(it.salePrice ?? it.sale_price ?? 0) * Number(it.qty || 0) * (pct / 100);
     }
 
-    const total = subtotal - discountAmount;
-
-    return { subtotal, discountAmount, total, orderDiscountPct: 0 };
+    return {
+      subtotal,
+      discountAmount,
+      total: subtotal - discountAmount,
+      orderDiscountPct: 0
+    };
   };
 
   const treatmentsHtml = (it) => {
@@ -1063,15 +1035,19 @@ export async function renderPOS(outlet) {
   const renderCart = () => {
     const box = outlet.querySelector('#cartBox');
 
-    if (cart.length === 0) {
+    if (!cart.length) {
       box.innerHTML = `<div class="text-muted">Carrito vacío</div>`;
+
       outlet.querySelector('#cartSubtotal').textContent = money(0);
 
-      if (!isOptica) outlet.querySelector('#cartDiscount').textContent = money(0);
+      if (!isOptica) {
+        outlet.querySelector('#cartDiscount').textContent = money(0);
+      }
 
       outlet.querySelector('#cartTotal').textContent = money(0);
 
       setCheckoutState();
+
       return;
     }
 
@@ -1091,6 +1067,7 @@ export async function renderPOS(outlet) {
         <div class="mt-1 ${discountMode === 'item' ? '' : 'd-none'}" data-itemdiscbox="${it.cart_key}">
           <div class="d-flex align-items-center gap-2">
             <span>Desc %</span>
+
             <input type="number" min="0" max="100"
               class="form-control form-control-sm"
               style="max-width:90px;"
@@ -1106,6 +1083,7 @@ export async function renderPOS(outlet) {
         <div class="d-flex justify-content-between border rounded p-2 mb-2">
           <div style="min-width:0;">
             <div class="fw-semibold">${safe(it.name)}</div>
+
             <div>
               ${safe(it.sku || 'CUSTOM-BISEL')}
               · ${money(it.salePrice ?? it.sale_price ?? 0)}
@@ -1113,10 +1091,20 @@ export async function renderPOS(outlet) {
             </div>
 
             ${treatmentsHtml(it)}
-            ${!isCustom && it.axis != null ? `<div class="mt-1"><b>Eje:</b> ${safe(it.axis)}</div>` : ''}
+
+            ${
+              !isCustom && it.axis !== null && it.axis !== undefined && String(it.axis).trim() !== ''
+                ? `<div class="mt-1"><b>Eje:</b> ${safe(it.axis)}</div>`
+                : ''
+            }
+
             ${customBiselHtml(it)}
 
-            ${!isCustom && available <= CRITICAL_STOCK && available > 0 ? `<div class="text-danger">Stock crítico</div>` : ``}
+            ${
+              !isCustom && available <= CRITICAL_STOCK && available > 0
+                ? `<div class="text-danger">Stock crítico</div>`
+                : ``
+            }
 
             ${itemDisc}
           </div>
@@ -1135,70 +1123,14 @@ export async function renderPOS(outlet) {
 
     outlet.querySelector('#cartSubtotal').textContent = money(t.subtotal);
 
-    if (!isOptica) outlet.querySelector('#cartDiscount').textContent = money(t.discountAmount);
+    if (!isOptica) {
+      outlet.querySelector('#cartDiscount').textContent = money(t.discountAmount);
+    }
 
     outlet.querySelector('#cartTotal').textContent = money(t.total);
 
     setCheckoutState();
   };
-
-  async function selectTreatmentsForProduct(p) {
-    if (!isOptica || !isMicaProduct(p)) return [];
-
-    try {
-      const { data } = await api.get(`/products/${Number(p.id)}/treatments`);
-      const rows = Array.isArray(data) ? data : [];
-
-      if (!rows.length) {
-        await Swal.fire({
-          icon: 'info',
-          title: 'Sin tratamientos disponibles',
-          text: 'Esta mica no tiene tratamientos configurados.'
-        });
-
-        return [];
-      }
-
-      const html = rows.map(t => `
-        <div class="form-check text-start mb-2">
-          <input class="form-check-input js-treatment-check" type="checkbox" value="${Number(t.id)}" id="tr_${Number(t.id)}">
-          <label class="form-check-label" for="tr_${Number(t.id)}">
-            ${safe(t.name || t.code || `Tratamiento ${t.id}`)}
-          </label>
-          ${t.description ? `<div class="ms-4">${safe(t.description)}</div>` : ''}
-        </div>
-      `).join('');
-
-      const result = await Swal.fire({
-        title: 'Selecciona tratamientos',
-        html: `<div style="max-height:320px;overflow:auto;text-align:left;">${html}</div>`,
-        showCancelButton: true,
-        confirmButtonText: 'Agregar',
-        cancelButtonText: 'Cancelar',
-        focusConfirm: false,
-        preConfirm: () => {
-          return Array.from(document.querySelectorAll('.js-treatment-check:checked')).map(el => {
-            const id = Number(el.value || 0);
-            const row = rows.find(x => Number(x.id) === id);
-
-            return {
-              id,
-              name: row?.name || row?.code || `Tratamiento ${id}`
-            };
-          });
-        }
-      });
-
-      if (!result.isConfirmed) return null;
-
-      return normalizeTreatments(result.value || []);
-    } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || 'No se pudieron cargar tratamientos';
-      await Swal.fire('Error', msg, 'error');
-
-      return null;
-    }
-  }
 
   function renderCustomTreatmentRows(selected = []) {
     const selectedIds = normalizeTreatments(selected).map(t => t.id);
@@ -1224,6 +1156,7 @@ export async function renderPOS(outlet) {
             <option value="">Selecciona tratamiento</option>
             ${options}
           </select>
+
           <button type="button" class="btn btn-outline-danger js-remove-custom-treatment">×</button>
         </div>
       `;
@@ -1276,9 +1209,11 @@ export async function renderPOS(outlet) {
 
         <div class="mb-3">
           <label class="form-label">Tratamiento</label>
+
           <div id="customBiselTreatmentsBox">
             ${renderCustomTreatmentRows([])}
           </div>
+
           <button type="button" class="btn btn-sm btn-outline-brand mt-2" id="btnAddCustomTreatment">
             Agregar tratamiento
           </button>
@@ -1286,6 +1221,7 @@ export async function renderPOS(outlet) {
 
         <div class="mb-3">
           <label class="form-label">Tipo de lente</label>
+
           <select id="customBiselLensType" class="form-select">
             <option value="">Selecciona tipo de lente</option>
             ${lensOptions}
@@ -1295,6 +1231,7 @@ export async function renderPOS(outlet) {
         <div class="mb-3">
           <label class="form-label">Altura de armazón</label>
           <input id="customBiselFrameHeight" type="number" min="0" step="0.01" class="form-control" placeholder="Ej. 50" />
+
           <div class="mt-2">
             <b>Altura de la oblea:</b> <span id="customBiselBlankHeightText">—</span>
           </div>
@@ -1309,6 +1246,7 @@ export async function renderPOS(outlet) {
 
     const bindCustomTreatmentEvents = () => {
       const box = document.getElementById('customBiselTreatmentsBox');
+
       if (!box) return;
 
       box.querySelectorAll('.js-remove-custom-treatment').forEach(btn => {
@@ -1317,7 +1255,9 @@ export async function renderPOS(outlet) {
 
           if (rows.length <= 1) {
             const sel = btn.closest('.js-custom-treatment-row')?.querySelector('.js-custom-treatment-select');
+
             if (sel) sel.value = '';
+
             return;
           }
 
@@ -1333,6 +1273,7 @@ export async function renderPOS(outlet) {
 
     const refreshCustomTreatmentOptions = () => {
       const box = document.getElementById('customBiselTreatmentsBox');
+
       if (!box) return;
 
       const currentValues = Array.from(box.querySelectorAll('.js-custom-treatment-select'))
@@ -1343,11 +1284,11 @@ export async function renderPOS(outlet) {
       rows.forEach((row, idx) => {
         const sel = row.querySelector('.js-custom-treatment-select');
         const current = Number(sel.value || 0);
-
         const others = currentValues.filter((_, i) => i !== idx && currentValues[i] > 0);
 
         sel.innerHTML = `
           <option value="">Selecciona tratamiento</option>
+
           ${(treatmentsCatalog || [])
             .filter(t => {
               const id = Number(t.id);
@@ -1416,6 +1357,7 @@ export async function renderPOS(outlet) {
 
         addBtn?.addEventListener('click', () => {
           const wrapper = document.createElement('div');
+
           wrapper.innerHTML = renderCustomTreatmentRows([]);
 
           const row = wrapper.firstElementChild;
@@ -1535,7 +1477,7 @@ export async function renderPOS(outlet) {
           frame_height: frameHeight,
           blank_height: blankHeight,
           observations,
-          treatments: normalizeTreatments(selectedTreatments),
+          treatments: normalizeTreatments(selectedTreatments)
         };
       }
     });
@@ -1588,24 +1530,8 @@ export async function renderPOS(outlet) {
       return false;
     }
 
-    let selectedTreatments = normalizeTreatments(p.treatments || []);
-    let selectedAxis = p.axis ?? null;
-
-    if (isOptica && isMicaProduct(p)) {
-      const picked = await selectTreatmentsForProduct(p);
-
-      if (picked === null) return false;
-
-      selectedTreatments = picked;
-
-      const axisResult = await requestAxisForMica(p);
-
-      if (axisResult === false) return false;
-
-      if (axisResult !== null) {
-        selectedAxis = axisResult;
-      }
-    }
+    const selectedTreatments = normalizeTreatments(p.treatments || []);
+    const selectedAxis = p.axis ?? null;
 
     const baseItem = {
       ...p,
@@ -1614,7 +1540,7 @@ export async function renderPOS(outlet) {
       qty: 1,
       itemDiscountPct: 0,
       treatments: selectedTreatments,
-      axis: selectedAxis,
+      axis: selectedAxis
     };
 
     const cart_key = makeCartKey(baseItem);
@@ -1637,6 +1563,7 @@ export async function renderPOS(outlet) {
     }
 
     renderCart();
+
     return true;
   };
 
@@ -1678,7 +1605,11 @@ export async function renderPOS(outlet) {
 
       if (!id) return;
 
-      selectedCustomer = { id, name };
+      selectedCustomer = {
+        id,
+        name
+      };
+
       hidden.value = String(id);
       input.value = name;
 
@@ -1686,7 +1617,7 @@ export async function renderPOS(outlet) {
     };
 
     const renderList = (matches) => {
-      box.innerHTML = matches.map((c) => {
+      box.innerHTML = matches.map(c => {
         const id = getId(c);
         const name = getName(c);
         const meta = getMeta(c);
@@ -1710,7 +1641,7 @@ export async function renderPOS(outlet) {
 
       const q = String(input.value || '').trim().toLowerCase();
 
-      if (!q || customers.length === 0) {
+      if (!q || !customers.length) {
         hide();
         return [];
       }
@@ -1725,7 +1656,7 @@ export async function renderPOS(outlet) {
         })
         .slice(0, 10);
 
-      if (matches.length === 0) {
+      if (!matches.length) {
         hide();
         return [];
       }
@@ -1734,12 +1665,6 @@ export async function renderPOS(outlet) {
 
       return matches;
     };
-
-    input.addEventListener('input', filterMatches);
-
-    input.addEventListener('focus', () => {
-      if (String(input.value || '').trim()) filterMatches();
-    });
 
     const handlePickFromEvent = (e) => {
       const btn = e.target?.closest('[data-custid]');
@@ -1756,6 +1681,12 @@ export async function renderPOS(outlet) {
 
       if (c) pick(c);
     };
+
+    input.addEventListener('input', filterMatches);
+
+    input.addEventListener('focus', () => {
+      if (String(input.value || '').trim()) filterMatches();
+    });
 
     box.addEventListener('mousedown', handlePickFromEvent);
     box.addEventListener('click', handlePickFromEvent);
@@ -1780,13 +1711,17 @@ export async function renderPOS(outlet) {
 
     if (detailsId) {
       const p = products.find(x => String(x.id) === String(detailsId));
+
       if (p) await showProductDetails(p);
+
       return;
     }
 
     if (addId) {
       const p = products.find(x => String(x.id) === String(addId));
+
       if (p) await addToCart(p);
+
       return;
     }
 
@@ -1815,7 +1750,7 @@ export async function renderPOS(outlet) {
       const it = cart.find(x => String(x.cart_key) === String(decKey));
 
       if (it) {
-        it.qty = Math.max(1, it.qty - 1);
+        it.qty = Math.max(1, Number(it.qty || 1) - 1);
         renderCart();
       }
 
@@ -1885,7 +1820,7 @@ export async function renderPOS(outlet) {
   outlet.querySelector('#btnCheckout')?.addEventListener('click', async (e) => {
     e.preventDefault();
 
-    if (cart.length === 0) return;
+    if (!cart.length) return;
 
     const productQtyMap = new Map();
 
@@ -1943,7 +1878,7 @@ export async function renderPOS(outlet) {
         item_discount_value,
         axis: it.axis ?? null,
         item_notes: it.item_notes ?? null,
-        treatments: normalizeTreatments(it.treatments || []).map(x => x.id),
+        treatments: normalizeTreatments(it.treatments || []).map(x => x.id)
       };
 
       if (it.custom_bisel) {
@@ -1959,11 +1894,11 @@ export async function renderPOS(outlet) {
 
           lens_type_id: it.lens_type_id ? Number(it.lens_type_id) : null,
 
-          frame_height: it.frame_height != null ? Number(it.frame_height) : null,
-          blank_height: it.blank_height != null ? Number(it.blank_height) : null,
+          frame_height: it.frame_height !== null && it.frame_height !== undefined ? Number(it.frame_height) : null,
+          blank_height: it.blank_height !== null && it.blank_height !== undefined ? Number(it.blank_height) : null,
 
           observations: it.observations ?? null,
-          name: it.name ?? 'Biselado personalizado',
+          name: it.name ?? 'Biselado personalizado'
         };
       }
 
@@ -1987,18 +1922,23 @@ export async function renderPOS(outlet) {
       `,
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: 'Crear'
+      confirmButtonText: 'Crear',
+      cancelButtonText: 'Cancelar'
     });
 
     if (!ok.isConfirmed) return;
 
     try {
+      showPageSpinner();
+      btnCheckout.disabled = true;
+
       await api.post('/orders', orderPayload);
 
       cart = [];
       selectedCustomer = null;
 
       const hid = outlet.querySelector('#customerId');
+
       if (hid) hid.value = '';
 
       renderCart();
@@ -2019,6 +1959,9 @@ export async function renderPOS(outlet) {
         : '';
 
       Swal.fire('Error', details || msg, 'error');
+    } finally {
+      hidePageSpinner();
+      setCheckoutState();
     }
   });
 
