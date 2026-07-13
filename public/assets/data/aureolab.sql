@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Servidor: 127.0.0.1:3307
--- Tiempo de generación: 12-05-2026 a las 17:29:59
+-- Tiempo de generación: 13-07-2026 a las 20:09:48
 -- Versión del servidor: 10.4.32-MariaDB
 -- Versión de PHP: 8.2.12
 
@@ -310,6 +310,7 @@ INSERT INTO `lens_types` (`id`, `code`, `name`, `notes`, `active`, `created_at`,
 
 CREATE TABLE `materials` (
   `id` bigint(20) UNSIGNED NOT NULL,
+  `CODE` varchar(255) NOT NULL,
   `name` varchar(120) NOT NULL,
   `description` varchar(255) DEFAULT NULL,
   `active` tinyint(1) NOT NULL DEFAULT 1,
@@ -322,11 +323,11 @@ CREATE TABLE `materials` (
 -- Volcado de datos para la tabla `materials`
 --
 
-INSERT INTO `materials` (`id`, `name`, `description`, `active`, `created_at`, `updated_at`, `deleted_at`) VALUES
-(1, 'CR-39', 'Resina CR-39', 1, '2026-03-02 17:00:05', '2026-03-02 17:00:05', NULL),
-(2, 'POLICARBONATO', 'Policarbonato', 1, '2026-03-02 17:00:05', '2026-03-02 17:00:05', NULL),
-(3, 'HI-INDEX 1.56', 'Alto índice 1.56', 1, '2026-03-02 17:00:05', '2026-03-02 17:00:05', NULL),
-(4, 'HI-INDEX 1.67', 'Alto índice 1.67', 1, '2026-03-02 17:00:05', '2026-03-02 17:00:05', NULL);
+INSERT INTO `materials` (`id`, `CODE`, `name`, `description`, `active`, `created_at`, `updated_at`, `deleted_at`) VALUES
+(1, '', 'CR-39', 'Resina CR-39', 1, '2026-03-02 17:00:05', '2026-03-02 17:00:05', NULL),
+(2, '', 'POLICARBONATO', 'Policarbonato', 1, '2026-03-02 17:00:05', '2026-03-02 17:00:05', NULL),
+(3, '', 'HI-INDEX 1.56', 'Alto índice 1.56', 1, '2026-03-02 17:00:05', '2026-03-02 17:00:05', NULL),
+(4, '', 'HI-INDEX 1.67', 'Alto índice 1.67', 1, '2026-03-02 17:00:05', '2026-03-02 17:00:05', NULL);
 
 -- --------------------------------------------------------
 
@@ -584,8 +585,9 @@ INSERT INTO `personal_access_tokens` (`id`, `tokenable_type`, `tokenable_id`, `n
 (11, 'App\\Models\\User', 1, 'api-token', '53276dc5dc06e1552862778cd213af1d10570ef7561a57091c5dfde3e005ee46', '[\"*\"]', '2026-03-02 19:52:49', NULL, '2026-03-02 19:52:18', '2026-03-02 19:52:49'),
 (15, 'App\\Models\\User', 1, 'api-token', '21521dd4c42d81d12bd1e5002fb7b8ab390117b4fc080a75760ab698a00006e3', '[\"*\"]', '2026-03-24 17:27:00', NULL, '2026-03-24 14:03:02', '2026-03-24 17:27:00'),
 (16, 'App\\Models\\User', 1, 'api-token', 'f6b8d97473cf8cf31da4fd88a37f7c2d8e1c354ea9213e5b63b0cdf83e6b0020', '[\"*\"]', '2026-04-17 20:16:44', NULL, '2026-04-17 16:10:02', '2026-04-17 20:16:44'),
-(18, 'App\\Models\\User', 4, 'api-token', 'e5dba10d4447db3e668bf794dc8bdf745acb991efad23872336b4363f95cf17e', '[\"*\"]', '2026-05-12 14:45:07', NULL, '2026-04-18 15:33:51', '2026-05-12 14:45:07'),
-(24, 'App\\Models\\User', 1, 'api-token', 'dfc691945636f6d7e86516a7b1b8094406c010d77c17f61e6f36a85309f599f8', '[\"*\"]', '2026-05-12 15:29:06', NULL, '2026-04-20 18:48:17', '2026-05-12 15:29:06');
+(18, 'App\\Models\\User', 4, 'api-token', 'e5dba10d4447db3e668bf794dc8bdf745acb991efad23872336b4363f95cf17e', '[\"*\"]', '2026-05-12 17:17:46', NULL, '2026-04-18 15:33:51', '2026-05-12 17:17:46'),
+(24, 'App\\Models\\User', 1, 'api-token', 'dfc691945636f6d7e86516a7b1b8094406c010d77c17f61e6f36a85309f599f8', '[\"*\"]', '2026-05-12 17:22:54', NULL, '2026-04-20 18:48:17', '2026-05-12 17:22:54'),
+(25, 'App\\Models\\User', 1, 'api-token', 'e41b8112e3da57e73cfe7e79302601866c2ee3a6ce7e747aab31fa0613d9cbee', '[\"*\"]', '2026-07-13 16:43:27', NULL, '2026-07-13 16:43:18', '2026-07-13 16:43:27');
 
 -- --------------------------------------------------------
 
@@ -917,7 +919,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`id`, `role_id`, `optica_id`, `name`, `email`, `phone`, `password`, `remember_token`, `email_verified_at`, `active`, `created_at`, `updated_at`, `deleted_at`) VALUES
-(1, 1, NULL, 'Administrador', 'admin@aureolab.com', NULL, '$2y$12$SZHtvyS2io00NG47LArzreS2UVMDgtTUX36lnVZi7JTEJj3wavpCW', NULL, NULL, 1, '2026-02-09 20:40:15', '2026-02-09 20:40:15', NULL),
+(1, 1, NULL, 'Administrador', 'admin@aureolab.com', NULL, '$2y$12$Sx8LeHzNRk/RA/8iEIKlBeFU/3Y/YblgoVZpf2YE2QdYLH7Yo/gjm', NULL, NULL, 1, '2026-02-09 20:40:15', '2026-07-13 16:41:39', NULL),
 (2, 2, NULL, 'Empleado 1', 'empleado1@aureolab.com', '5512345678', '$2y$12$6yeyhXD/V3YU5RkGuNM.QeesbR35LlCMk2TC.vZZV2rS0wZV4I1cy', NULL, NULL, 1, '2026-02-19 23:06:00', '2026-03-14 19:00:25', NULL),
 (4, 3, 1, 'Óptica Lottica', 'optica.lottica@aureolab.com', '5599990000', '$2y$12$GJ/YPQMUgkjWFc76ZGwS6e0QLDXpREDYE8OT55BTQezFPPlkcDYV6', NULL, NULL, 1, '2026-02-18 02:30:56', '2026-02-18 02:30:56', NULL),
 (5, 3, 2, 'Optica Centro', 'optica@gmail.com', '1234567890', '$2y$12$nzuh/Q1xpxRa/wf5ufkyK.6qZCyaTLIYQs6H8.jk/VFr.8nuubx7W', NULL, NULL, 1, '2026-03-14 15:54:34', '2026-03-14 19:21:08', NULL),
@@ -1285,7 +1287,7 @@ ALTER TABLE `payment_methods`
 -- AUTO_INCREMENT de la tabla `personal_access_tokens`
 --
 ALTER TABLE `personal_access_tokens`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=25;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=26;
 
 --
 -- AUTO_INCREMENT de la tabla `products`

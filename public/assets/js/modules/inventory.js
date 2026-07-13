@@ -3,8 +3,10 @@
 // - Modal crea/edita productos con payload NUEVO (FKs + sphere/cylinder/axis + treatments[])
 // - Usa selects para: Type, Material, Supplier, Box
 // - Soporta imagen con preview a la derecha
-// - Muestra/oculta campos según categoría (MICAS / LENTES_CONTACTO / otros)
+// - Muestra/oculta campos según categoría (is_mica / LENTES_CONTACTO / otros)
 // - Guarda con FormData
+// - Categorías con is_mica + buy_price + sale_price
+// - Generación masiva de micas desde inventario
 // - Al editar, consulta /products/{id}
 // - La preview usa blob protegido con token
 
@@ -30,6 +32,61 @@ function pickCategoryName(c) {
 
 function pickCategoryCode(c) {
   return String(c?.code ?? c?.slug ?? '').trim();
+}
+
+function isMicaCategory(c) {
+  if (!c) return false;
+
+  if (
+    c.is_mica === true ||
+    c.isMica === true ||
+    Number(c.is_mica ?? c.isMica ?? 0) === 1
+  ) {
+    return true;
+  }
+
+  const code = pickCategoryCode(c).toUpperCase();
+
+  return code === 'MICAS' ||
+    code.startsWith('MICA_') ||
+    code.startsWith('MICA-');
+}
+
+function isContactsCategory(c) {
+  const code = pickCategoryCode(c).toUpperCase();
+  return code === 'LENTES_CONTACTO';
+}
+
+function isLensLikeCategory(c) {
+  return isMicaCategory(c) || isContactsCategory(c);
+}
+
+function categoryBuyPrice(c) {
+  return Number(c?.buy_price ?? c?.buyPrice ?? 0);
+}
+
+function categorySalePrice(c) {
+  return Number(c?.sale_price ?? c?.salePrice ?? 0);
+}
+
+function isQuarterStep(value) {
+  if (value === null || value === undefined || value === '') return true;
+
+  const n = Number(value);
+
+  if (Number.isNaN(n)) return false;
+
+  const scaled = Math.round(n * 100);
+
+  return scaled % 25 === 0;
+}
+
+function formatMoneyInput(value) {
+  const n = Number(value ?? 0);
+
+  if (Number.isNaN(n)) return '0.00';
+
+  return n.toFixed(2);
 }
 
 function buildOptions(arr, placeholder = '-- Selecciona --', labelFn = (x) => x.name, valueKey = 'id') {
@@ -165,7 +222,18 @@ function normalizeTreatmentsArray(arr) {
 function toggleAxisField() {
   const cylinderEl = document.getElementById('cylinder');
   const axisEl = document.getElementById('axis');
+  const catId = document.getElementById('category_id')?.value || '';
+  const cat = (window.__inventoryCategories || []).find(x => String(x.id) === String(catId));
+  const isMicas = isMicaCategory(cat);
+
   if (!cylinderEl || !axisEl) return;
+
+  if (isMicas) {
+    axisEl.disabled = true;
+    axisEl.value = '';
+    setFieldError('axis', 'axisError', '');
+    return;
+  }
 
   const raw = String(cylinderEl.value || '').trim();
 
@@ -216,7 +284,11 @@ function enforceNegativeCylinder() {
     return;
   }
 
-  if (num === 0) {
+  const catId = document.getElementById('category_id')?.value || '';
+  const cat = (window.__inventoryCategories || []).find(x => String(x.id) === String(catId));
+  const isMicas = isMicaCategory(cat);
+
+  if (num === 0 && !isMicas) {
     cylinderEl.value = '';
     setFieldError('cylinder', 'cylinderError', 'El cilindro no puede ser 0. Debe ser negativo.');
     if (axisEl) axisEl.value = '';
@@ -251,6 +323,16 @@ function enforceAxisRange() {
 
   if (axisNum < 0 || axisNum > 180) {
     setFieldError('axis', 'axisError', 'El eje debe estar entre 0 y 180.');
+    return;
+  }
+
+  const catId = document.getElementById('category_id')?.value || '';
+  const cat = (window.__inventoryCategories || []).find(x => String(x.id) === String(catId));
+  const isMicas = isMicaCategory(cat);
+
+  if (isMicas) {
+    axisEl.value = '';
+    setFieldError('axis', 'axisError', '');
     return;
   }
 
@@ -291,9 +373,12 @@ function normalizeInventoryRows(rows) {
         name: p.name ?? '',
         description: p.description ?? '',
 
-        categoryCode: p.category ?? '',
-        categoryLabel: p.category_label ?? p.categoryLabel ?? '',
+        categoryCode: p.category_code ?? p.category ?? '',
+        categoryLabel: p.category_name ?? p.category_label ?? p.categoryLabel ?? '',
         categoryId: p.category_id ?? p.categoryId ?? null,
+        categoryIsMica: Boolean(p.category_is_mica ?? p.is_mica ?? false),
+        categoryBuyPrice: Number(p.category_buy_price ?? 0),
+        categorySalePrice: Number(p.category_sale_price ?? 0),
 
         type: p.type ?? null,
         material: p.material ?? null,
@@ -413,7 +498,7 @@ export async function renderInventory(outlet) {
 
   function getSelectedTreatmentIds() {
     return Array.from(document.querySelectorAll('.treatment-select'))
-      .map(el => Number(el.value || 0))
+          .map(el => Number(el.value || 0))
       .filter(v => v > 0);
   }
 
@@ -604,14 +689,16 @@ export async function renderInventory(outlet) {
               <form id="productForm">
                 <div class="row g-3">
 
-                  <div class="col-md-4">
+                  <div class="col-md-4" id="skuFieldWrap">
                     <label class="form-label">SKU</label>
                     <input class="form-control" id="sku" required>
+                    <div class="form-text" id="skuHelp">Para generación masiva de micas, el SKU se genera automáticamente.</div>
                   </div>
 
-                  <div class="col-md-8">
+                  <div class="col-md-8" id="nameFieldWrap">
                     <label class="form-label">Nombre</label>
                     <input class="form-control" id="name" required>
+                    <div class="form-text" id="nameHelp">Para generación masiva de micas, el nombre se genera automáticamente.</div>
                   </div>
 
                   <div class="col-md-6">
@@ -630,11 +717,13 @@ export async function renderInventory(outlet) {
                   <div class="col-md-6">
                     <label class="form-label">Precio compra</label>
                     <input type="number" class="form-control" id="buyPrice" min="0" step="0.01">
+                    <div class="form-text" id="buyPriceHelp"></div>
                   </div>
 
                   <div class="col-md-6">
                     <label class="form-label">Precio venta</label>
                     <input type="number" class="form-control" id="salePrice" min="0" step="0.01">
+                    <div class="form-text" id="salePriceHelp"></div>
                   </div>
 
                   <div class="col-md-6">
@@ -679,26 +768,67 @@ export async function renderInventory(outlet) {
                         </select>
                       </div>
 
-                      <div class="col-md-4">
-                        <label class="form-label">Esfera</label>
-                        <input type="number" class="form-control" id="sphere" step="0.25" min="-40" max="40" placeholder="Ej: -2.00 o 1.25">
+                      <div class="col-12 d-none" id="bulkMicaSection">
+                        <div class="alert alert-light border mb-0">
+                          <div class="fw-semibold">Generación masiva de micas</div>
+                          <div class="small text-muted">
+                            El sistema generará una mica por cada combinación de esfera y cilindro en incrementos de 0.25.
+                            El precio se toma desde la categoría seleccionada.
+                          </div>
+
+                          <div class="row g-3 mt-1">
+                            <div class="col-md-3">
+                              <label class="form-label">Esfera mínima</label>
+                              <input type="number" class="form-control" id="sphere_min" step="0.25" min="-40" max="40" placeholder="Ej: -2.00">
+                            </div>
+
+                            <div class="col-md-3">
+                              <label class="form-label">Esfera máxima</label>
+                              <input type="number" class="form-control" id="sphere_max" step="0.25" min="-40" max="40" placeholder="Ej: 2.00">
+                            </div>
+
+                            <div class="col-md-3">
+                              <label class="form-label">Cilindro máximo negativo</label>
+                              <input type="number" class="form-control" id="cylinder_max" step="0.25" min="-40" max="0" placeholder="Ej: -0.25">
+                              <div class="form-text">Se generará desde 0.00 hasta este valor.</div>
+                            </div>
+
+                            <div class="col-md-3">
+                              <label class="form-label">Stock inicial por mica</label>
+                              <input type="number" class="form-control" id="initial_stock" min="0" step="1" value="0">
+                            </div>
+
+                            <div class="col-12">
+                              <div class="small" id="bulkMicaPreview">
+                                Completa los rangos para ver cuántos productos se generarán.
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
 
-                      <div class="col-md-4">
-                        <label class="form-label">Cilindro</label>
-                        <input type="number" class="form-control" id="cylinder" step="0.25" max="0" placeholder="Ej: -0.50">
-                        <span id="cylinderError" class="text-danger small d-none"></span>
-                      </div>
+                      <div class="row g-3 mt-0" id="singleOpticalFields">
+                        <div class="col-md-4">
+                          <label class="form-label">Esfera</label>
+                          <input type="number" class="form-control" id="sphere" step="0.25" min="-40" max="40" placeholder="Ej: -2.00 o 1.25">
+                        </div>
 
-                      <div class="col-md-4">
-                        <label class="form-label">Eje</label>
-                        <input type="number" class="form-control" id="axis" min="0" max="180" step="1" placeholder="Ej: 90">
-                        <span id="axisError" class="text-danger small d-none"></span>
+                        <div class="col-md-4">
+                          <label class="form-label">Cilindro</label>
+                          <input type="number" class="form-control" id="cylinder" step="0.25" min="-40" max="0" placeholder="Ej: 0.00 o -0.50">
+                          <span id="cylinderError" class="text-danger small d-none"></span>
+                        </div>
+
+                        <div class="col-md-4" id="axisFieldWrap">
+                          <label class="form-label">Eje</label>
+                          <input type="number" class="form-control" id="axis" min="0" max="180" step="1" placeholder="Ej: 90">
+                          <span id="axisError" class="text-danger small d-none"></span>
+                        </div>
                       </div>
 
                       <div class="col-12">
                         <div class="small text-muted">
-                          Type, Material, Supplier, Box, Esfera, Cilindro y Eje solo aplican para MICAS y LENTES_CONTACTO.
+                          Para micas se permite cilindro 0.00 y no se captura eje. Para lentes de contacto se mantiene la validación con eje.
                         </div>
                       </div>
 
@@ -868,7 +998,10 @@ export async function renderInventory(outlet) {
                 <th>ID</th>
                 <th>Code</th>
                 <th>Nombre</th>
-                <th>Descripción</th>
+                                <th>Descripción</th>
+                <th>Mica</th>
+                <th>Compra</th>
+                <th>Venta</th>
                 ${canEdit ? '<th>Acciones</th>' : ''}
               </tr>
             </thead>
@@ -878,12 +1011,16 @@ export async function renderInventory(outlet) {
                 const code = pickCategoryCode(c);
                 const name = pickCategoryName(c);
                 const desc = c.description ?? '';
+                const isMica = isMicaCategory(c);
                 return `
                   <tr>
                     <td>${safe(id)}</td>
                     <td><code>${safe(code)}</code></td>
                     <td>${safe(name)}</td>
                     <td>${safe(desc)}</td>
+                    <td>${isMica ? '<span class="badge text-bg-primary">Sí</span>' : '<span class="badge text-bg-secondary">No</span>'}</td>
+                    <td>${money(categoryBuyPrice(c))}</td>
+                    <td>${money(categorySalePrice(c))}</td>
                     ${canEdit ? `
                       <td class="text-nowrap">
                         <button class="btn btn-sm btn-outline-brand me-1" data-cat-edit="${id}">Editar</button>
@@ -906,22 +1043,130 @@ export async function renderInventory(outlet) {
     mountDataTable('#tblCategories');
   };
 
+  function updateBulkMicaPreview() {
+    const preview = document.getElementById('bulkMicaPreview');
+    if (!preview) return;
+
+    const sMinRaw = document.getElementById('sphere_min')?.value ?? '';
+    const sMaxRaw = document.getElementById('sphere_max')?.value ?? '';
+    const cMaxRaw = document.getElementById('cylinder_max')?.value ?? '';
+
+    if (sMinRaw === '' || sMaxRaw === '' || cMaxRaw === '') {
+      preview.textContent = 'Completa los rangos para ver cuántos productos se generarán.';
+      preview.className = 'small text-muted';
+      return;
+    }
+
+    const sMin = Number(sMinRaw);
+    const sMax = Number(sMaxRaw);
+    const cMax = Number(cMaxRaw);
+
+    if (
+      Number.isNaN(sMin) ||
+      Number.isNaN(sMax) ||
+      Number.isNaN(cMax) ||
+      sMin > sMax ||
+      cMax > 0 ||
+      !isQuarterStep(sMin) ||
+      !isQuarterStep(sMax) ||
+      !isQuarterStep(cMax)
+    ) {
+      preview.textContent = 'Rangos inválidos. Usa incrementos de 0.25, esfera mínima menor o igual a máxima y cilindro 0 o negativo.';
+      preview.className = 'small text-danger';
+      return;
+    }
+
+    const sphereCount = Math.floor(Math.round((sMax - sMin) * 100) / 25) + 1;
+    const cylinderCount = Math.floor(Math.round((0 - cMax) * 100) / 25) + 1;
+    const total = Math.max(0, sphereCount) * Math.max(0, cylinderCount);
+
+    preview.textContent = `Se generarán ${total} productos (${sphereCount} esferas x ${cylinderCount} cilindros).`;
+    preview.className = 'small text-success fw-semibold';
+  }
+
   function toggleLensSection() {
     const catId = document.getElementById('category_id')?.value || '';
+    const productId = document.getElementById('productId')?.value || '';
     const cat = (categories || []).find(x => String(x.id) === String(catId));
-    const code = pickCategoryCode(cat);
 
     const lensSection = document.getElementById('lensSection');
     const treatmentsSection = document.getElementById('treatmentsSection');
+    const bulkMicaSection = document.getElementById('bulkMicaSection');
+    const singleOpticalFields = document.getElementById('singleOpticalFields');
+    const axisFieldWrap = document.getElementById('axisFieldWrap');
+
+    const sku = document.getElementById('sku');
+    const name = document.getElementById('name');
+    const skuFieldWrap = document.getElementById('skuFieldWrap');
+    const nameFieldWrap = document.getElementById('nameFieldWrap');
+
+    const buyPrice = document.getElementById('buyPrice');
+    const salePrice = document.getElementById('salePrice');
+    const buyPriceHelp = document.getElementById('buyPriceHelp');
+    const salePriceHelp = document.getElementById('salePriceHelp');
+
     if (!lensSection) return;
 
-    const isMicas = (code === 'MICAS');
-    const isContacts = (code === 'LENTES_CONTACTO');
-    const isLens = isMicas || isContacts;
+    const isMicas = isMicaCategory(cat);
+    const isContacts = isContactsCategory(cat);
+    const isLens = isLensLikeCategory(cat);
+    const isCreating = !productId;
+    const isBulkMica = isCreating && isMicas;
 
     lensSection.classList.toggle('d-none', !isLens);
+
     if (treatmentsSection) {
       treatmentsSection.classList.toggle('d-none', !isMicas);
+    }
+
+    if (bulkMicaSection) {
+      bulkMicaSection.classList.toggle('d-none', !isBulkMica);
+    }
+
+    if (singleOpticalFields) {
+      singleOpticalFields.classList.toggle('d-none', isBulkMica);
+    }
+
+    if (axisFieldWrap) {
+      axisFieldWrap.classList.toggle('d-none', isMicas);
+    }
+
+    if (sku) {
+      sku.required = !isBulkMica;
+      sku.disabled = isBulkMica;
+      if (isBulkMica) sku.value = '';
+    }
+
+    if (name) {
+      name.required = !isBulkMica;
+      name.disabled = isBulkMica;
+      if (isBulkMica) name.value = '';
+    }
+
+    if (skuFieldWrap) {
+      skuFieldWrap.classList.toggle('opacity-50', isBulkMica);
+    }
+
+    if (nameFieldWrap) {
+      nameFieldWrap.classList.toggle('opacity-50', isBulkMica);
+    }
+
+    if (buyPrice && salePrice) {
+      if (isMicas) {
+        buyPrice.value = formatMoneyInput(categoryBuyPrice(cat));
+        salePrice.value = formatMoneyInput(categorySalePrice(cat));
+        buyPrice.disabled = true;
+        salePrice.disabled = true;
+
+        if (buyPriceHelp) buyPriceHelp.textContent = 'Para micas, este precio se toma desde la categoría.';
+        if (salePriceHelp) salePriceHelp.textContent = 'Para micas, este precio se toma desde la categoría.';
+      } else {
+        buyPrice.disabled = false;
+        salePrice.disabled = false;
+
+        if (buyPriceHelp) buyPriceHelp.textContent = '';
+        if (salePriceHelp) salePriceHelp.textContent = '';
+      }
     }
 
     if (!isLens) {
@@ -932,11 +1177,20 @@ export async function renderInventory(outlet) {
       clearLensErrors();
     }
 
+    if (isMicas) {
+      const axisEl = document.getElementById('axis');
+      if (axisEl) {
+        axisEl.value = '';
+        axisEl.disabled = true;
+      }
+    }
+
     if (!isMicas) {
       const container = getTreatmentsContainer();
       if (container) container.innerHTML = '';
     }
 
+    updateBulkMicaPreview();
     toggleAxisField();
   }
 
@@ -962,6 +1216,16 @@ export async function renderInventory(outlet) {
     document.getElementById('sphere').value = (p?.sphere ?? '');
     document.getElementById('cylinder').value = (p?.cylinder ?? '');
     document.getElementById('axis').value = (p?.axis ?? '');
+
+    const sMin = document.getElementById('sphere_min');
+    const sMax = document.getElementById('sphere_max');
+    const cMax = document.getElementById('cylinder_max');
+    const initialStock = document.getElementById('initial_stock');
+
+    if (sMin) sMin.value = '';
+    if (sMax) sMax.value = '';
+    if (cMax) cMax.value = '';
+    if (initialStock) initialStock.value = '0';
 
     const sel = document.getElementById('category_id');
     sel.value = (p?.categoryId ?? p?.category_id ?? '');
@@ -1000,6 +1264,11 @@ export async function renderInventory(outlet) {
 
     categoryEl?.addEventListener('change', toggleLensSection);
 
+    ['sphere_min', 'sphere_max', 'cylinder_max'].forEach(id => {
+      document.getElementById(id)?.addEventListener('input', updateBulkMicaPreview);
+      document.getElementById(id)?.addEventListener('blur', updateBulkMicaPreview);
+    });
+
     document.getElementById('cylinder')?.addEventListener('input', () => {
       enforceNegativeCylinder();
       enforceAxisRange();
@@ -1026,10 +1295,8 @@ export async function renderInventory(outlet) {
     btnAddTreatment?.addEventListener('click', () => {
       const catId = document.getElementById('category_id')?.value || '';
       const cat = (categories || []).find(x => String(x.id) === String(catId));
-      const code = pickCategoryCode(cat);
-
-      if (code !== 'MICAS') {
-        Swal.fire('No aplica', 'Los tratamientos solo se configuran para MICAS.', 'info');
+      if (!isMicaCategory(cat)) {
+        Swal.fire('No aplica', 'Los tratamientos solo se configuran para categorías marcadas como mica.', 'info');
         return;
       }
 
@@ -1089,8 +1356,17 @@ export async function renderInventory(outlet) {
       const name = document.getElementById('name').value.trim();
       const category_id = Number(document.getElementById('category_id').value || 0);
 
-      if (!sku || !name || !category_id) {
-        Swal.fire('Faltan datos', 'SKU, Nombre y Categoría son obligatorios.', 'info');
+      if (!category_id) {
+        Swal.fire('Faltan datos', 'La categoría es obligatoria.', 'info');
+        return;
+      }
+
+      const cat = (categories || []).find(x => String(x.id) === String(category_id));
+      const isMicas = isMicaCategory(cat);
+      const isBulkMica = !id && isMicas;
+
+      if (!isBulkMica && (!sku || !name)) {
+        Swal.fire('Faltan datos', 'SKU y Nombre son obligatorios.', 'info');
         return;
       }
 
@@ -1102,78 +1378,136 @@ export async function renderInventory(outlet) {
       const cylinder = (document.getElementById('cylinder').value === '' ? null : Number(document.getElementById('cylinder').value));
       const axis = (document.getElementById('axis').value === '' ? null : Number(document.getElementById('axis').value));
 
-      if (cylinder !== null && cylinder > 0) {
-        setFieldError('cylinder', 'cylinderError', 'No se permiten números positivos.');
-        return;
-      }
+      if (isBulkMica) {
+        const sphereMin = document.getElementById('sphere_min').value === '' ? null : Number(document.getElementById('sphere_min').value);
+        const sphereMax = document.getElementById('sphere_max').value === '' ? null : Number(document.getElementById('sphere_max').value);
+        const cylinderMax = document.getElementById('cylinder_max').value === '' ? null : Number(document.getElementById('cylinder_max').value);
+        const initialStock = document.getElementById('initial_stock').value === '' ? 0 : Number(document.getElementById('initial_stock').value);
 
-      if (cylinder !== null && cylinder === 0) {
-        setFieldError('cylinder', 'cylinderError', 'El cilindro no puede ser 0. Debe ser negativo.');
-        return;
-      }
+        if (sphereMin === null || sphereMax === null || cylinderMax === null) {
+          Swal.fire('Faltan rangos', 'Captura esfera mínima, esfera máxima y cilindro máximo negativo.', 'info');
+          return;
+        }
 
-      if (cylinder !== null && axis === null) {
-        setFieldError('axis', 'axisError', 'Si capturas cilindro debes capturar el eje.');
-        return;
-      }
+        if (!isQuarterStep(sphereMin) || !isQuarterStep(sphereMax) || !isQuarterStep(cylinderMax)) {
+          Swal.fire('Rangos inválidos', 'Los valores deben ir en incrementos de 0.25.', 'warning');
+          return;
+        }
 
-      if (axis !== null && cylinder === null) {
-        setFieldError('axis', 'axisError', 'Si capturas eje debes capturar cilindro.');
-        return;
-      }
+        if (sphereMin > sphereMax) {
+          Swal.fire('Rango inválido', 'La esfera mínima no puede ser mayor a la esfera máxima.', 'warning');
+          return;
+        }
 
-      if (axis !== null && (axis < 0 || axis > 180)) {
-        setFieldError('axis', 'axisError', 'El eje debe estar entre 0 y 180.');
-        return;
-      }
+        if (cylinderMax > 0) {
+          Swal.fire('Rango inválido', 'El cilindro máximo no puede ser positivo.', 'warning');
+          return;
+        }
 
-      if (axis !== null && cylinder !== null && cylinder >= 0) {
-        setFieldError('axis', 'axisError', 'El eje solo aplica cuando el cilindro es negativo.');
-        return;
-      }
+        if (!Number.isInteger(initialStock) || initialStock < 0) {
+          Swal.fire('Stock inválido', 'El stock inicial debe ser un entero mayor o igual a 0.', 'warning');
+          return;
+        }
+      } else {
+        if (cylinder !== null && cylinder > 0) {
+          setFieldError('cylinder', 'cylinderError', 'No se permiten números positivos.');
+          return;
+        }
 
-      if (sphere !== null && (sphere < -40 || sphere > 40)) {
-        Swal.fire('Dato inválido', 'sphere debe estar entre -40 y 40', 'warning');
-        return;
+        if (cylinder !== null && cylinder === 0 && !isMicas) {
+          setFieldError('cylinder', 'cylinderError', 'El cilindro no puede ser 0. Debe ser negativo.');
+          return;
+        }
+
+        if (!isMicas && cylinder !== null && axis === null) {
+          setFieldError('axis', 'axisError', 'Si capturas cilindro debes capturar el eje.');
+          return;
+        }
+
+        if (!isMicas && axis !== null && cylinder === null) {
+          setFieldError('axis', 'axisError', 'Si capturas eje debes capturar cilindro.');
+          return;
+        }
+
+        if (axis !== null && (axis < 0 || axis > 180)) {
+          setFieldError('axis', 'axisError', 'El eje debe estar entre 0 y 180.');
+          return;
+        }
+
+        if (!isMicas && axis !== null && cylinder !== null && cylinder >= 0) {
+          setFieldError('axis', 'axisError', 'El eje solo aplica cuando el cilindro es negativo.');
+          return;
+        }
+
+        if (sphere !== null && (sphere < -40 || sphere > 40)) {
+          Swal.fire('Dato inválido', 'sphere debe estar entre -40 y 40', 'warning');
+          return;
+        }
       }
 
       if (!validateTreatmentDuplicates()) {
         return;
       }
 
-      const cat = (categories || []).find(x => String(x.id) === String(category_id));
-      const code = pickCategoryCode(cat);
-      const treatmentIds = code === 'MICAS'
+      const treatmentIds = isMicas
         ? getSelectedTreatmentIds()
         : [];
 
       const imageFile = document.getElementById('image')?.files?.[0] || null;
 
       const formData = new FormData();
-      formData.append('sku', sku);
-      formData.append('name', name);
-      formData.append('category_id', String(category_id));
 
-      appendIfNotNull(formData, 'description', (document.getElementById('description').value || '').trim() || null);
-      appendIfNotNull(formData, 'buyPrice', document.getElementById('buyPrice').value || 0);
-      appendIfNotNull(formData, 'salePrice', document.getElementById('salePrice').value || 0);
-      appendIfNotNull(formData, 'minStock', document.getElementById('minStock').value || 0);
-      appendIfNotNull(formData, 'maxStock', document.getElementById('maxStock').value === '' ? null : document.getElementById('maxStock').value);
+      if (!id && isMicas) {
+        formData.append('generate_micas', '1');
+        formData.append('category_id', String(category_id));
 
-      appendIfNotNull(formData, 'supplier_id', supplier_id);
-      appendIfNotNull(formData, 'box_id', box_id);
-      appendIfNotNull(formData, 'lens_type_id', lens_type_id);
-      appendIfNotNull(formData, 'material_id', material_id);
-      appendIfNotNull(formData, 'sphere', sphere);
-      appendIfNotNull(formData, 'cylinder', cylinder);
-      appendIfNotNull(formData, 'axis', axis);
+        appendIfNotNull(formData, 'description', (document.getElementById('description').value || '').trim() || null);
+        appendIfNotNull(formData, 'minStock', document.getElementById('minStock').value || 0);
+        appendIfNotNull(formData, 'maxStock', document.getElementById('maxStock').value === '' ? null : document.getElementById('maxStock').value);
 
-      treatmentIds.forEach(tid => {
-        formData.append('treatments[]', String(tid));
-      });
+        appendIfNotNull(formData, 'supplier_id', supplier_id);
+        appendIfNotNull(formData, 'box_id', box_id);
+        appendIfNotNull(formData, 'lens_type_id', lens_type_id);
+        appendIfNotNull(formData, 'material_id', material_id);
 
-      if (imageFile) {
-        formData.append('image', imageFile);
+        formData.append('sphere_min', document.getElementById('sphere_min').value);
+        formData.append('sphere_max', document.getElementById('sphere_max').value);
+        formData.append('cylinder_max', document.getElementById('cylinder_max').value);
+        formData.append('initial_stock', document.getElementById('initial_stock').value || '0');
+        formData.append('skip_existing', '1');
+
+        treatmentIds.forEach(tid => {
+          formData.append('treatments[]', String(tid));
+        });
+      } else {
+        formData.append('sku', sku);
+        formData.append('name', name);
+        formData.append('category_id', String(category_id));
+
+        appendIfNotNull(formData, 'description', (document.getElementById('description').value || '').trim() || null);
+        appendIfNotNull(formData, 'buyPrice', document.getElementById('buyPrice').value || 0);
+        appendIfNotNull(formData, 'salePrice', document.getElementById('salePrice').value || 0);
+        appendIfNotNull(formData, 'minStock', document.getElementById('minStock').value || 0);
+        appendIfNotNull(formData, 'maxStock', document.getElementById('maxStock').value === '' ? null : document.getElementById('maxStock').value);
+
+        appendIfNotNull(formData, 'supplier_id', supplier_id);
+        appendIfNotNull(formData, 'box_id', box_id);
+        appendIfNotNull(formData, 'lens_type_id', lens_type_id);
+        appendIfNotNull(formData, 'material_id', material_id);
+        appendIfNotNull(formData, 'sphere', sphere);
+        appendIfNotNull(formData, 'cylinder', cylinder);
+
+        if (!isMicas) {
+                    appendIfNotNull(formData, 'axis', axis);
+        }
+
+        treatmentIds.forEach(tid => {
+          formData.append('treatments[]', String(tid));
+        });
+
+        if (imageFile) {
+          formData.append('image', imageFile);
+        }
       }
 
       try {
@@ -1201,11 +1535,35 @@ export async function renderInventory(outlet) {
       html: `
         <div class="text-start">
           <label class="form-label">CODE</label>
-          <input id="swCatCode" class="form-control" placeholder="Ej: MICAS">
+          <input id="swCatCode" class="form-control" placeholder="Ej: MICA_FOTOCROMATICA_NEGRA">
+
           <label class="form-label mt-2">Nombre</label>
-          <input id="swCatName" class="form-control" placeholder="Ej: Micas">
+          <input id="swCatName" class="form-control" placeholder="Ej: Mica fotocromática negra">
+
           <label class="form-label mt-2">Descripción (opcional)</label>
           <input id="swCatDesc" class="form-control" placeholder="Opcional">
+
+          <div class="form-check form-switch mt-3">
+            <input class="form-check-input" type="checkbox" id="swCatIsMica">
+            <label class="form-check-label" for="swCatIsMica">
+              Esta categoría es una mica
+            </label>
+          </div>
+
+          <div class="row g-2 mt-1">
+            <div class="col-6">
+              <label class="form-label">Precio compra</label>
+              <input id="swCatBuyPrice" type="number" min="0" step="0.01" class="form-control" value="0.00">
+            </div>
+            <div class="col-6">
+              <label class="form-label">Precio venta</label>
+              <input id="swCatSalePrice" type="number" min="0" step="0.01" class="form-control" value="0.00">
+            </div>
+          </div>
+
+          <div class="small text-muted mt-2">
+            Si marcas la categoría como mica, los productos generados tomarán estos precios.
+          </div>
         </div>
       `,
       focusConfirm: false,
@@ -1215,11 +1573,26 @@ export async function renderInventory(outlet) {
         const code = document.getElementById('swCatCode')?.value?.trim() || '';
         const name = document.getElementById('swCatName')?.value?.trim() || '';
         const description = document.getElementById('swCatDesc')?.value?.trim() || '';
+        const is_mica = Boolean(document.getElementById('swCatIsMica')?.checked);
+        const buy_price = Number(document.getElementById('swCatBuyPrice')?.value || 0);
+        const sale_price = Number(document.getElementById('swCatSalePrice')?.value || 0);
+
         if (!code || !name) {
           Swal.showValidationMessage('CODE y Nombre son obligatorios');
           return false;
         }
-        return { code, name, description };
+
+        if (Number.isNaN(buy_price) || buy_price < 0) {
+          Swal.showValidationMessage('Precio compra inválido');
+          return false;
+        }
+
+        if (Number.isNaN(sale_price) || sale_price < 0) {
+          Swal.showValidationMessage('Precio venta inválido');
+          return false;
+        }
+
+        return { code, name, description, is_mica, buy_price, sale_price };
       }
     });
 
@@ -1229,8 +1602,12 @@ export async function renderInventory(outlet) {
       await inventoryService.createCategory({
         code: r.value.code,
         name: r.value.name,
-        description: r.value.description || null
+        description: r.value.description || null,
+        is_mica: r.value.is_mica,
+        buy_price: r.value.buy_price,
+        sale_price: r.value.sale_price
       });
+
       Swal.fire('Listo', 'Categoría creada.', 'success');
       await refresh('categories');
     } catch (e) {
@@ -1246,6 +1623,9 @@ export async function renderInventory(outlet) {
     const currentName = pickCategoryName(cat);
     const currentCode = pickCategoryCode(cat);
     const currentDesc = cat?.description ?? '';
+    const currentIsMica = isMicaCategory(cat);
+    const currentBuyPrice = categoryBuyPrice(cat);
+    const currentSalePrice = categorySalePrice(cat);
 
     const r = await Swal.fire({
       title: 'Editar categoría',
@@ -1253,10 +1633,34 @@ export async function renderInventory(outlet) {
         <div class="text-start">
           <label class="form-label">CODE</label>
           <input id="swCatCode" class="form-control" value="${safe(currentCode)}">
+
           <label class="form-label mt-2">Nombre</label>
           <input id="swCatName" class="form-control" value="${safe(currentName)}">
+
           <label class="form-label mt-2">Descripción (opcional)</label>
           <input id="swCatDesc" class="form-control" value="${safe(currentDesc)}">
+
+          <div class="form-check form-switch mt-3">
+            <input class="form-check-input" type="checkbox" id="swCatIsMica" ${currentIsMica ? 'checked' : ''}>
+            <label class="form-check-label" for="swCatIsMica">
+              Esta categoría es una mica
+            </label>
+          </div>
+
+          <div class="row g-2 mt-1">
+            <div class="col-6">
+              <label class="form-label">Precio compra</label>
+              <input id="swCatBuyPrice" type="number" min="0" step="0.01" class="form-control" value="${safe(formatMoneyInput(currentBuyPrice))}">
+            </div>
+            <div class="col-6">
+              <label class="form-label">Precio venta</label>
+              <input id="swCatSalePrice" type="number" min="0" step="0.01" class="form-control" value="${safe(formatMoneyInput(currentSalePrice))}">
+            </div>
+          </div>
+
+          <div class="small text-muted mt-2">
+            Si cambias precios, el sistema te preguntará si quieres actualizarlos también en los productos existentes.
+          </div>
         </div>
       `,
       focusConfirm: false,
@@ -1266,23 +1670,88 @@ export async function renderInventory(outlet) {
         const code = document.getElementById('swCatCode')?.value?.trim() || '';
         const name = document.getElementById('swCatName')?.value?.trim() || '';
         const description = document.getElementById('swCatDesc')?.value?.trim() || '';
+        const is_mica = Boolean(document.getElementById('swCatIsMica')?.checked);
+        const buy_price = Number(document.getElementById('swCatBuyPrice')?.value || 0);
+        const sale_price = Number(document.getElementById('swCatSalePrice')?.value || 0);
+
         if (!code || !name) {
           Swal.showValidationMessage('CODE y Nombre son obligatorios');
           return false;
         }
-        return { code, name, description };
+
+        if (Number.isNaN(buy_price) || buy_price < 0) {
+          Swal.showValidationMessage('Precio compra inválido');
+          return false;
+        }
+
+        if (Number.isNaN(sale_price) || sale_price < 0) {
+          Swal.showValidationMessage('Precio venta inválido');
+          return false;
+        }
+
+        return { code, name, description, is_mica, buy_price, sale_price };
       }
     });
 
     if (!r.isConfirmed) return;
 
+    const pricesChanged =
+      Math.abs(Number(r.value.buy_price) - Number(currentBuyPrice)) > 0.00001 ||
+      Math.abs(Number(r.value.sale_price) - Number(currentSalePrice)) > 0.00001;
+
+    let update_products_prices = false;
+
+    if (pricesChanged && r.value.is_mica) {
+      const confirmPrices = await Swal.fire({
+        title: 'Cambió el precio',
+        html: `
+          <div class="text-start">
+            <p class="mb-2">¿Quieres aplicar estos nuevos precios a todos los productos existentes de esta categoría?</p>
+            <div class="border rounded p-2 bg-light">
+              <div><b>Compra anterior:</b> ${money(currentBuyPrice)}</div>
+              <div><b>Compra nueva:</b> ${money(r.value.buy_price)}</div>
+              <div><b>Venta anterior:</b> ${money(currentSalePrice)}</div>
+              <div><b>Venta nueva:</b> ${money(r.value.sale_price)}</div>
+            </div>
+            <div class="small text-muted mt-2">
+              Esto no modifica pedidos ya creados, solo productos del inventario.
+            </div>
+          </div>
+        `,
+        icon: 'question',
+        showDenyButton: true,
+        showCancelButton: true,
+        confirmButtonText: 'Actualizar productos',
+        denyButtonText: 'Solo categoría',
+        cancelButtonText: 'Cancelar'
+      });
+
+      if (confirmPrices.isDismissed) return;
+
+      update_products_prices = confirmPrices.isConfirmed;
+    }
+
     try {
-      await inventoryService.updateCategory(catId, {
+      const res = await inventoryService.updateCategory(catId, {
         code: r.value.code,
         name: r.value.name,
-        description: r.value.description || null
+        description: r.value.description || null,
+        is_mica: r.value.is_mica,
+        buy_price: r.value.buy_price,
+        sale_price: r.value.sale_price,
+        update_products_prices
       });
-      Swal.fire('Listo', 'Categoría actualizada.', 'success');
+
+      const updatedCount = Number(res?.updated_products ?? res?.data?.updated_products ?? 0);
+
+      Swal.fire(
+        'Listo',
+        update_products_prices
+          ? `Categoría actualizada. Productos actualizados: ${updatedCount}.`
+          : 'Categoría actualizada.',
+        'success'
+      );
+
       await refresh('categories');
     } catch (e) {
       console.error(e);
@@ -1378,6 +1847,7 @@ export async function renderInventory(outlet) {
       ]);
 
       categories = Array.isArray(cats) ? cats : [];
+      window.__inventoryCategories = categories;
       lensTypes = Array.isArray(lt?.data) ? lt.data : (Array.isArray(lt) ? lt : []);
       materials = Array.isArray(mats?.data) ? mats.data : (Array.isArray(mats) ? mats : []);
       suppliers = Array.isArray(sups?.data) ? sups.data : (Array.isArray(sups) ? sups : []);

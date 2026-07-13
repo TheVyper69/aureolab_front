@@ -139,7 +139,6 @@ CHECK (
 );
 
 
---se realizo en lap will
 ALTER TABLE products
 ADD COLUMN is_custom TINYINT(1) NOT NULL DEFAULT 0 AFTER active,
 ADD COLUMN show_in_pos TINYINT(1) NOT NULL DEFAULT 1 AFTER is_custom;
@@ -163,3 +162,37 @@ CREATE TABLE order_item_custom_bisel (
         FOREIGN KEY (lens_type_id) REFERENCES lens_types(id)
         ON DELETE SET NULL
 );
+
+--se realizo en lap tice
+
+ALTER TABLE categories
+ADD COLUMN is_mica TINYINT(1) NOT NULL DEFAULT 0 AFTER description,
+ADD COLUMN buy_price DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER is_mica,
+ADD COLUMN sale_price DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER buy_price,
+ADD COLUMN last_price_update_at TIMESTAMP NULL DEFAULT NULL AFTER sale_price;
+
+UPDATE categories
+SET is_mica = 1
+WHERE code = 'MICAS';
+
+ALTER TABLE products
+ADD INDEX idx_products_category_sphere_cylinder (category_id, sphere, cylinder);
+
+ALTER TABLE categories
+ADD INDEX idx_categories_is_mica (is_mica);
+
+ALTER TABLE products
+DROP CONSTRAINT chk_products_cylinder_negative;
+
+ALTER TABLE products
+ADD CONSTRAINT chk_products_cylinder_non_positive
+CHECK (cylinder IS NULL OR cylinder <= 0);
+ALTER TABLE products
+DROP CONSTRAINT chk_products_axis_cylinder_pair;
+
+ALTER TABLE products
+DROP CONSTRAINT chk_products_axis_range;
+
+ALTER TABLE products
+ADD CONSTRAINT chk_products_axis_range
+CHECK (axis IS NULL OR (axis >= 1 AND axis <= 180));
