@@ -489,10 +489,12 @@ function printOrderTicket(order, opticaName, paymentMethodLabel) {
             text-align: center;
           }
 
-          .title {
-            font-size: 16px;
-            font-weight: 700;
-            margin-bottom: 2px;
+          .ticket-logo {
+            max-width: 48mm;
+            max-height: 22mm;
+            object-fit: contain;
+            display: block;
+            margin: 0 auto 4px auto;
           }
 
           .subtitle {
@@ -592,7 +594,7 @@ function printOrderTicket(order, opticaName, paymentMethodLabel) {
       <body>
         <div class="ticket">
           <div class="center">
-            <div class="title">AUROLAB</div>
+            <img class="ticket-logo" src="assets/images/logo.png" alt="Logo">
             <div class="subtitle">Ticket de pedido</div>
           </div>
 
