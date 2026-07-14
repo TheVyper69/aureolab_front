@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Servidor: 127.0.0.1:3307
--- Tiempo de generación: 13-07-2026 a las 20:09:48
+-- Tiempo de generación: 14-07-2026 a las 20:59:25
 -- Versión del servidor: 10.4.32-MariaDB
 -- Versión de PHP: 8.2.12
 
@@ -82,6 +82,10 @@ CREATE TABLE `categories` (
   `code` varchar(40) NOT NULL,
   `name` varchar(80) NOT NULL,
   `description` text DEFAULT NULL,
+  `is_mica` tinyint(1) NOT NULL DEFAULT 0,
+  `buy_price` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `sale_price` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `last_price_update_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
   `deleted_at` timestamp NULL DEFAULT NULL
@@ -91,15 +95,16 @@ CREATE TABLE `categories` (
 -- Volcado de datos para la tabla `categories`
 --
 
-INSERT INTO `categories` (`id`, `code`, `name`, `description`, `created_at`, `updated_at`, `deleted_at`) VALUES
-(1, 'MICAS', 'Micas', NULL, '2026-02-09 19:43:02', '2026-02-09 19:52:21', NULL),
-(2, 'LENTES CONTACTO', 'Lentes de Contacto', NULL, '2026-02-09 19:43:02', '2026-02-11 15:05:52', NULL),
-(3, 'ARMAZONES', 'Armazones', NULL, '2026-02-09 19:43:02', '2026-02-09 19:52:21', NULL),
-(4, 'ACCESORIOS', 'Accesorios', NULL, '2026-02-09 19:43:02', '2026-02-09 19:52:21', NULL),
-(5, 'BISEL', 'Bisel', NULL, '2026-02-09 19:43:02', '2026-02-11 15:06:03', NULL),
-(7, 'TEST', 'Test', NULL, '2026-02-10 15:57:49', '2026-02-10 16:34:28', '2026-02-10 16:34:28'),
-(8, 'GOTAS', 'Gotas', NULL, '2026-02-10 16:35:33', '2026-02-10 16:35:52', '2026-02-10 16:35:52'),
-(9, 'MATENIMIENTO', 'MATENIMIENTO', NULL, '2026-02-11 15:07:16', '2026-02-11 15:07:16', NULL);
+INSERT INTO `categories` (`id`, `code`, `name`, `description`, `is_mica`, `buy_price`, `sale_price`, `last_price_update_at`, `created_at`, `updated_at`, `deleted_at`) VALUES
+(1, 'MICAS', 'Micas', NULL, 1, 0.00, 0.00, NULL, '2026-02-09 19:43:02', '2026-02-09 19:52:21', NULL),
+(2, 'LENTES CONTACTO', 'Lentes de Contacto', NULL, 0, 0.00, 0.00, NULL, '2026-02-09 19:43:02', '2026-02-11 15:05:52', NULL),
+(3, 'ARMAZONES', 'Armazones', NULL, 0, 0.00, 0.00, NULL, '2026-02-09 19:43:02', '2026-02-09 19:52:21', NULL),
+(4, 'ACCESORIOS', 'Accesorios', NULL, 0, 0.00, 0.00, NULL, '2026-02-09 19:43:02', '2026-02-09 19:52:21', NULL),
+(5, 'BISEL', 'Bisel', NULL, 0, 0.00, 0.00, NULL, '2026-02-09 19:43:02', '2026-02-11 15:06:03', NULL),
+(7, 'TEST', 'Test', NULL, 0, 0.00, 0.00, NULL, '2026-02-10 15:57:49', '2026-02-10 16:34:28', '2026-02-10 16:34:28'),
+(8, 'GOTAS', 'Gotas', NULL, 0, 0.00, 0.00, NULL, '2026-02-10 16:35:33', '2026-02-10 16:35:52', '2026-02-10 16:35:52'),
+(9, 'MATENIMIENTO', 'MATENIMIENTO', NULL, 0, 0.00, 0.00, NULL, '2026-02-11 15:07:16', '2026-02-11 15:07:16', NULL),
+(11, 'MICA_FOTOCROMATICA_NEGRA', 'Mica fotocromática negra', NULL, 1, 100.00, 150.00, NULL, '2026-07-13 19:17:05', '2026-07-13 19:17:05', NULL);
 
 -- --------------------------------------------------------
 
@@ -156,7 +161,41 @@ INSERT INTO `inventory` (`id`, `product_id`, `stock`, `reserved`, `last_entry_da
 (7, 7, 14, 1, '2026-02-19', '2026-02-19 22:57:57', '2026-03-02 17:27:22', NULL),
 (9, 9, 4, 1, '2026-02-11', '2026-02-11 15:10:16', '2026-03-02 17:27:22', NULL),
 (10, 10, 4, 1, NULL, '2026-03-02 19:52:49', '2026-04-20 18:26:45', NULL),
-(12, 12, 4, 1, '2026-04-18', '2026-04-18 15:44:45', '2026-04-18 15:45:12', NULL);
+(12, 12, 4, 1, '2026-04-18', '2026-04-18 15:44:45', '2026-04-18 15:45:12', NULL),
+(14, 15, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(15, 16, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(16, 17, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(17, 18, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(18, 19, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(19, 20, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(20, 21, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(21, 22, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(22, 23, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(23, 24, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(24, 25, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(25, 26, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(26, 27, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(27, 28, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(28, 29, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(29, 30, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(30, 31, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(31, 32, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(32, 33, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(33, 34, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(34, 35, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(35, 36, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(36, 37, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(37, 38, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(38, 39, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(39, 40, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(40, 41, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(41, 42, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(42, 43, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(43, 44, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(44, 45, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(45, 46, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(46, 47, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(47, 48, 5, 0, '2026-07-13', '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL);
 
 -- --------------------------------------------------------
 
@@ -209,7 +248,41 @@ INSERT INTO `inventory_movements` (`id`, `product_id`, `variant_id`, `movement_t
 (23, 12, NULL, 'in', 4, 'manual', NULL, 'Entrada desde inventario', 1, '2026-04-18 15:44:45', '2026-04-18 15:44:45', NULL),
 (24, 12, NULL, 'reserve', 1, 'order', 12, 'Reserva por pedido', 4, '2026-04-18 15:45:12', '2026-04-18 15:45:12', NULL),
 (25, 10, NULL, 'out', 1, 'order', 11, 'Salida por pedido entregado', 1, '2026-04-20 18:26:45', '2026-04-20 18:26:45', NULL),
-(26, 1, NULL, 'out', 1, 'order', 11, 'Salida por pedido entregado', 1, '2026-04-20 18:26:45', '2026-04-20 18:26:45', NULL);
+(26, 1, NULL, 'out', 1, 'order', 11, 'Salida por pedido entregado', 1, '2026-04-20 18:26:45', '2026-04-20 18:26:45', NULL),
+(27, 15, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(28, 16, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(29, 17, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(30, 18, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(31, 19, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(32, 20, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(33, 21, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(34, 22, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(35, 23, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(36, 24, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(37, 25, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(38, 26, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(39, 27, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(40, 28, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(41, 29, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(42, 30, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(43, 31, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(44, 32, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(45, 33, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(46, 34, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(47, 35, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(48, 36, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(49, 37, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(50, 38, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(51, 39, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(52, 40, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(53, 41, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(54, 42, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(55, 43, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(56, 44, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(57, 45, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(58, 46, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(59, 47, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(60, 48, NULL, 'in', 5, 'manual', NULL, 'Stock inicial por generación masiva de micas', 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL);
 
 -- --------------------------------------------------------
 
@@ -585,9 +658,10 @@ INSERT INTO `personal_access_tokens` (`id`, `tokenable_type`, `tokenable_id`, `n
 (11, 'App\\Models\\User', 1, 'api-token', '53276dc5dc06e1552862778cd213af1d10570ef7561a57091c5dfde3e005ee46', '[\"*\"]', '2026-03-02 19:52:49', NULL, '2026-03-02 19:52:18', '2026-03-02 19:52:49'),
 (15, 'App\\Models\\User', 1, 'api-token', '21521dd4c42d81d12bd1e5002fb7b8ab390117b4fc080a75760ab698a00006e3', '[\"*\"]', '2026-03-24 17:27:00', NULL, '2026-03-24 14:03:02', '2026-03-24 17:27:00'),
 (16, 'App\\Models\\User', 1, 'api-token', 'f6b8d97473cf8cf31da4fd88a37f7c2d8e1c354ea9213e5b63b0cdf83e6b0020', '[\"*\"]', '2026-04-17 20:16:44', NULL, '2026-04-17 16:10:02', '2026-04-17 20:16:44'),
-(18, 'App\\Models\\User', 4, 'api-token', 'e5dba10d4447db3e668bf794dc8bdf745acb991efad23872336b4363f95cf17e', '[\"*\"]', '2026-05-12 17:17:46', NULL, '2026-04-18 15:33:51', '2026-05-12 17:17:46'),
+(18, 'App\\Models\\User', 4, 'api-token', 'e5dba10d4447db3e668bf794dc8bdf745acb991efad23872336b4363f95cf17e', '[\"*\"]', '2026-07-14 18:42:18', NULL, '2026-04-18 15:33:51', '2026-07-14 18:42:18'),
 (24, 'App\\Models\\User', 1, 'api-token', 'dfc691945636f6d7e86516a7b1b8094406c010d77c17f61e6f36a85309f599f8', '[\"*\"]', '2026-05-12 17:22:54', NULL, '2026-04-20 18:48:17', '2026-05-12 17:22:54'),
-(25, 'App\\Models\\User', 1, 'api-token', 'e41b8112e3da57e73cfe7e79302601866c2ee3a6ce7e747aab31fa0613d9cbee', '[\"*\"]', '2026-07-13 16:43:27', NULL, '2026-07-13 16:43:18', '2026-07-13 16:43:27');
+(25, 'App\\Models\\User', 1, 'api-token', 'e41b8112e3da57e73cfe7e79302601866c2ee3a6ce7e747aab31fa0613d9cbee', '[\"*\"]', '2026-07-13 19:43:50', NULL, '2026-07-13 16:43:18', '2026-07-13 19:43:50'),
+(26, 'App\\Models\\User', 1, 'api-token', '624e260a0a3220deacd1d685aa86b1bf598e2fbc7c025a401d4ebd417590afae', '[\"*\"]', '2026-07-14 18:38:43', NULL, '2026-07-14 18:37:46', '2026-07-14 18:38:43');
 
 -- --------------------------------------------------------
 
@@ -650,7 +724,41 @@ INSERT INTO `products` (`id`, `sku`, `name`, `description`, `category_id`, `type
 (9, 'DEMO-MIC-002', 'Mantenimiento', 'Mantenimiento a lentes', 9, NULL, NULL, NULL, NULL, NULL, 10.00, 50.00, 1, 5, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-02-11 15:10:08', '2026-02-11 15:10:08', NULL),
 (10, 'MIC-CR39-AR-NEG-200-050', 'Mica Monofocal CR-39 AR (Ejemplo)', 'Mica monofocal CR-39 con antirreflejante. Esfera fija por SKU.', 1, 'monofocal', NULL, NULL, 'legacy-cr39', NULL, 120.00, 280.00, 0, 50, 1, 1, 1, 1, 1, -2.00, -0.50, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-03-02 19:52:49', '2026-03-02 19:52:49', NULL),
 (12, 'test3', 'prueba mica', 'preuba', 1, NULL, NULL, NULL, NULL, NULL, 200.00, 400.00, 3, 10, 2, 2, 2, 2, NULL, 1.10, -1.00, 19, 'Captura de pantalla 2024-03-06 131611.png', 'image/png', 'products/4c96033e-ebf9-412c-9f9f-c11ef1c90446.png', NULL, 1, 0, 1, '2026-04-18 15:42:22', '2026-04-18 15:48:10', NULL),
-(13, 'BIS-CUSTOM-20260420112142-EW0QP', 'Biselado personalizado', 'Prueba 2', 5, 'bisel_personalizado', NULL, NULL, NULL, NULL, 0.00, 0.00, 0, NULL, NULL, NULL, 2, NULL, NULL, 1.20, -0.45, 100, NULL, NULL, NULL, NULL, 1, 1, 0, '2026-04-20 17:21:42', '2026-04-20 17:21:42', NULL);
+(13, 'BIS-CUSTOM-20260420112142-EW0QP', 'Biselado personalizado', 'Prueba 2', 5, 'bisel_personalizado', NULL, NULL, NULL, NULL, 0.00, 0.00, 0, NULL, NULL, NULL, 2, NULL, NULL, 1.20, -0.45, 100, NULL, NULL, NULL, NULL, 1, 1, 0, '2026-04-20 17:21:42', '2026-04-20 17:21:42', NULL),
+(15, 'MICA-FOTOCROMATICA-NEGRA-ESFN2P00-CIL0P00', 'Mica fotocromática negra ESF -2.00 CIL 0.00', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, -2.00, 0.00, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(16, 'MICA-FOTOCROMATICA-NEGRA-ESFN1P75-CIL0P00', 'Mica fotocromática negra ESF -1.75 CIL 0.00', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, -1.75, 0.00, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(17, 'MICA-FOTOCROMATICA-NEGRA-ESFN1P50-CIL0P00', 'Mica fotocromática negra ESF -1.50 CIL 0.00', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, -1.50, 0.00, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(18, 'MICA-FOTOCROMATICA-NEGRA-ESFN1P25-CIL0P00', 'Mica fotocromática negra ESF -1.25 CIL 0.00', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, -1.25, 0.00, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(19, 'MICA-FOTOCROMATICA-NEGRA-ESFN1P00-CIL0P00', 'Mica fotocromática negra ESF -1.00 CIL 0.00', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, -1.00, 0.00, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(20, 'MICA-FOTOCROMATICA-NEGRA-ESFN0P75-CIL0P00', 'Mica fotocromática negra ESF -0.75 CIL 0.00', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, -0.75, 0.00, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(21, 'MICA-FOTOCROMATICA-NEGRA-ESFN0P50-CIL0P00', 'Mica fotocromática negra ESF -0.50 CIL 0.00', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, -0.50, 0.00, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(22, 'MICA-FOTOCROMATICA-NEGRA-ESFN0P25-CIL0P00', 'Mica fotocromática negra ESF -0.25 CIL 0.00', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, -0.25, 0.00, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(23, 'MICA-FOTOCROMATICA-NEGRA-ESF0P00-CIL0P00', 'Mica fotocromática negra ESF 0.00 CIL 0.00', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 0.00, 0.00, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(24, 'MICA-FOTOCROMATICA-NEGRA-ESF0P25-CIL0P00', 'Mica fotocromática negra ESF 0.25 CIL 0.00', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 0.25, 0.00, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(25, 'MICA-FOTOCROMATICA-NEGRA-ESF0P50-CIL0P00', 'Mica fotocromática negra ESF 0.50 CIL 0.00', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 0.50, 0.00, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(26, 'MICA-FOTOCROMATICA-NEGRA-ESF0P75-CIL0P00', 'Mica fotocromática negra ESF 0.75 CIL 0.00', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 0.75, 0.00, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(27, 'MICA-FOTOCROMATICA-NEGRA-ESF1P00-CIL0P00', 'Mica fotocromática negra ESF 1.00 CIL 0.00', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 1.00, 0.00, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(28, 'MICA-FOTOCROMATICA-NEGRA-ESF1P25-CIL0P00', 'Mica fotocromática negra ESF 1.25 CIL 0.00', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 1.25, 0.00, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(29, 'MICA-FOTOCROMATICA-NEGRA-ESF1P50-CIL0P00', 'Mica fotocromática negra ESF 1.50 CIL 0.00', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 1.50, 0.00, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(30, 'MICA-FOTOCROMATICA-NEGRA-ESF1P75-CIL0P00', 'Mica fotocromática negra ESF 1.75 CIL 0.00', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 1.75, 0.00, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(31, 'MICA-FOTOCROMATICA-NEGRA-ESF2P00-CIL0P00', 'Mica fotocromática negra ESF 2.00 CIL 0.00', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 2.00, 0.00, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(32, 'MICA-FOTOCROMATICA-NEGRA-ESFN2P00-CILN0P25', 'Mica fotocromática negra ESF -2.00 CIL -0.25', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, -2.00, -0.25, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(33, 'MICA-FOTOCROMATICA-NEGRA-ESFN1P75-CILN0P25', 'Mica fotocromática negra ESF -1.75 CIL -0.25', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, -1.75, -0.25, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(34, 'MICA-FOTOCROMATICA-NEGRA-ESFN1P50-CILN0P25', 'Mica fotocromática negra ESF -1.50 CIL -0.25', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, -1.50, -0.25, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(35, 'MICA-FOTOCROMATICA-NEGRA-ESFN1P25-CILN0P25', 'Mica fotocromática negra ESF -1.25 CIL -0.25', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, -1.25, -0.25, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(36, 'MICA-FOTOCROMATICA-NEGRA-ESFN1P00-CILN0P25', 'Mica fotocromática negra ESF -1.00 CIL -0.25', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, -1.00, -0.25, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(37, 'MICA-FOTOCROMATICA-NEGRA-ESFN0P75-CILN0P25', 'Mica fotocromática negra ESF -0.75 CIL -0.25', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, -0.75, -0.25, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(38, 'MICA-FOTOCROMATICA-NEGRA-ESFN0P50-CILN0P25', 'Mica fotocromática negra ESF -0.50 CIL -0.25', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, -0.50, -0.25, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(39, 'MICA-FOTOCROMATICA-NEGRA-ESFN0P25-CILN0P25', 'Mica fotocromática negra ESF -0.25 CIL -0.25', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, -0.25, -0.25, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(40, 'MICA-FOTOCROMATICA-NEGRA-ESF0P00-CILN0P25', 'Mica fotocromática negra ESF 0.00 CIL -0.25', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 0.00, -0.25, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(41, 'MICA-FOTOCROMATICA-NEGRA-ESF0P25-CILN0P25', 'Mica fotocromática negra ESF 0.25 CIL -0.25', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 0.25, -0.25, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(42, 'MICA-FOTOCROMATICA-NEGRA-ESF0P50-CILN0P25', 'Mica fotocromática negra ESF 0.50 CIL -0.25', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 0.50, -0.25, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(43, 'MICA-FOTOCROMATICA-NEGRA-ESF0P75-CILN0P25', 'Mica fotocromática negra ESF 0.75 CIL -0.25', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 0.75, -0.25, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(44, 'MICA-FOTOCROMATICA-NEGRA-ESF1P00-CILN0P25', 'Mica fotocromática negra ESF 1.00 CIL -0.25', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 1.00, -0.25, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(45, 'MICA-FOTOCROMATICA-NEGRA-ESF1P25-CILN0P25', 'Mica fotocromática negra ESF 1.25 CIL -0.25', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 1.25, -0.25, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(46, 'MICA-FOTOCROMATICA-NEGRA-ESF1P50-CILN0P25', 'Mica fotocromática negra ESF 1.50 CIL -0.25', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 1.50, -0.25, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(47, 'MICA-FOTOCROMATICA-NEGRA-ESF1P75-CILN0P25', 'Mica fotocromática negra ESF 1.75 CIL -0.25', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 1.75, -0.25, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(48, 'MICA-FOTOCROMATICA-NEGRA-ESF2P00-CILN0P25', 'Mica fotocromática negra ESF 2.00 CIL -0.25', NULL, 11, NULL, NULL, NULL, NULL, NULL, 100.00, 150.00, 1, 8, 2, 2, 2, 2, NULL, 2.00, -0.25, NULL, NULL, NULL, NULL, NULL, 1, 0, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL);
 
 --
 -- Disparadores `products`
@@ -700,7 +808,75 @@ CREATE TABLE `product_treatments` (
 
 INSERT INTO `product_treatments` (`product_id`, `treatment_id`, `extra_price`, `active`, `created_at`, `updated_at`, `deleted_at`) VALUES
 (12, 1, 0.00, 1, '2026-04-18 15:48:10', '2026-04-18 15:48:10', NULL),
-(12, 3, 0.00, 1, '2026-04-18 15:48:10', '2026-04-18 15:48:10', NULL);
+(12, 3, 0.00, 1, '2026-04-18 15:48:10', '2026-04-18 15:48:10', NULL),
+(15, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(15, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(16, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(16, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(17, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(17, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(18, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(18, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(19, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(19, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(20, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(20, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(21, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(21, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(22, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(22, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(23, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(23, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(24, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(24, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(25, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(25, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(26, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(26, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(27, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(27, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(28, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(28, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(29, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(29, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(30, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(30, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(31, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(31, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(32, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(32, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(33, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(33, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(34, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(34, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(35, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(35, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(36, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(36, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(37, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(37, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(38, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(38, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(39, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(39, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(40, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(40, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(41, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(41, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(42, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(42, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(43, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(43, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(44, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(44, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(45, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(45, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(46, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(46, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(47, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(47, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(48, 2, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL),
+(48, 3, 0.00, 1, '2026-07-13 19:42:21', '2026-07-13 19:42:21', NULL);
 
 -- --------------------------------------------------------
 
@@ -941,7 +1117,8 @@ ALTER TABLE `boxes`
 --
 ALTER TABLE `categories`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `code` (`code`);
+  ADD UNIQUE KEY `code` (`code`),
+  ADD KEY `idx_categories_is_mica` (`is_mica`);
 
 --
 -- Indices de la tabla `customers`
@@ -1106,7 +1283,8 @@ ALTER TABLE `products`
   ADD KEY `idx_products_box_id` (`box_id`),
   ADD KEY `idx_products_lens_type_id` (`lens_type_id`),
   ADD KEY `idx_products_material_id` (`material_id`),
-  ADD KEY `idx_products_treatment_id` (`treatment_id`);
+  ADD KEY `idx_products_treatment_id` (`treatment_id`),
+  ADD KEY `idx_products_category_sphere_cylinder` (`category_id`,`sphere`,`cylinder`);
 
 --
 -- Indices de la tabla `product_treatments`
@@ -1191,7 +1369,7 @@ ALTER TABLE `boxes`
 -- AUTO_INCREMENT de la tabla `categories`
 --
 ALTER TABLE `categories`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
 
 --
 -- AUTO_INCREMENT de la tabla `customers`
@@ -1203,13 +1381,13 @@ ALTER TABLE `customers`
 -- AUTO_INCREMENT de la tabla `inventory`
 --
 ALTER TABLE `inventory`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=48;
 
 --
 -- AUTO_INCREMENT de la tabla `inventory_movements`
 --
 ALTER TABLE `inventory_movements`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=27;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=61;
 
 --
 -- AUTO_INCREMENT de la tabla `inventory_variants`
@@ -1287,7 +1465,7 @@ ALTER TABLE `payment_methods`
 -- AUTO_INCREMENT de la tabla `personal_access_tokens`
 --
 ALTER TABLE `personal_access_tokens`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=26;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=27;
 
 --
 -- AUTO_INCREMENT de la tabla `products`

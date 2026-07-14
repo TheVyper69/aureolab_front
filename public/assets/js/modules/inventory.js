@@ -68,6 +68,38 @@ function categoryBuyPrice(c) {
 function categorySalePrice(c) {
   return Number(c?.sale_price ?? c?.salePrice ?? 0);
 }
+function categoryImageUrl(c) {
+  return c?.imageUrl ?? c?.image_url ?? null;
+}
+
+function categoryHasImage(c) {
+  return Boolean(c?.has_image ?? c?.image_path ?? categoryImageUrl(c));
+}
+
+function buildCategoryFormData(values = {}) {
+  const formData = new FormData();
+
+  formData.append('code', values.code ?? '');
+  formData.append('name', values.name ?? '');
+  formData.append('description', values.description ?? '');
+  formData.append('is_mica', values.is_mica ? '1' : '0');
+  formData.append('buy_price', String(values.buy_price ?? 0));
+  formData.append('sale_price', String(values.sale_price ?? 0));
+
+  if (values.update_products_prices !== undefined) {
+    formData.append('update_products_prices', values.update_products_prices ? '1' : '0');
+  }
+
+  if (values.remove_image !== undefined) {
+    formData.append('remove_image', values.remove_image ? '1' : '0');
+  }
+
+  if (values.image) {
+    formData.append('image', values.image);
+  }
+
+  return formData;
+}
 
 function isQuarterStep(value) {
   if (value === null || value === undefined || value === '') return true;
@@ -861,7 +893,9 @@ export async function renderInventory(outlet) {
                       <div class="col-md-8">
                         <label class="form-label">Imagen del producto</label>
                         <input type="file" class="form-control" id="image" accept="image/*">
-                        <div class="form-text">Selecciona una imagen para el producto.</div>
+                        <div class="form-text" id="productImageHelp">
+                          Selecciona una imagen propia para este producto. Si la dejas vacía, puede heredar la imagen de la categoría.
+                        </div>
                       </div>
 
                       <div class="col-md-4">
@@ -998,7 +1032,8 @@ export async function renderInventory(outlet) {
                 <th>ID</th>
                 <th>Code</th>
                 <th>Nombre</th>
-                                <th>Descripción</th>
+                <th>Descripción</th>
+                <th>Imagen</th>
                 <th>Mica</th>
                 <th>Compra</th>
                 <th>Venta</th>
@@ -1012,12 +1047,20 @@ export async function renderInventory(outlet) {
                 const name = pickCategoryName(c);
                 const desc = c.description ?? '';
                 const isMica = isMicaCategory(c);
+                const imgUrl = categoryImageUrl(c);
+
                 return `
                   <tr>
                     <td>${safe(id)}</td>
                     <td><code>${safe(code)}</code></td>
                     <td>${safe(name)}</td>
                     <td>${safe(desc)}</td>
+                    <td>
+                      ${imgUrl
+                        ? `<img src="${safe(imgUrl)}" alt="Imagen" style="width:42px;height:42px;object-fit:contain;border:1px solid #ddd;border-radius:6px;background:#fff;">`
+                        : '<span class="badge text-bg-secondary">Sin imagen</span>'
+                      }
+                    </td>
                     <td>${isMica ? '<span class="badge text-bg-primary">Sí</span>' : '<span class="badge text-bg-secondary">No</span>'}</td>
                     <td>${money(categoryBuyPrice(c))}</td>
                     <td>${money(categorySalePrice(c))}</td>
@@ -1105,6 +1148,9 @@ export async function renderInventory(outlet) {
     const buyPriceHelp = document.getElementById('buyPriceHelp');
     const salePriceHelp = document.getElementById('salePriceHelp');
 
+    const imageInput = document.getElementById('image');
+    const productImageHelp = document.getElementById('productImageHelp');
+
     if (!lensSection) return;
 
     const isMicas = isMicaCategory(cat);
@@ -1149,6 +1195,16 @@ export async function renderInventory(outlet) {
 
     if (nameFieldWrap) {
       nameFieldWrap.classList.toggle('opacity-50', isBulkMica);
+    }
+    if (imageInput) {
+      imageInput.disabled = isBulkMica;
+      if (isBulkMica) imageInput.value = '';
+    }
+
+    if (productImageHelp) {
+      productImageHelp.textContent = isBulkMica
+        ? 'Para generación masiva de micas, la imagen se toma desde la categoría.'
+        : 'Selecciona una imagen propia para este producto. Si la dejas vacía, puede heredar la imagen de la categoría.';
     }
 
     if (buyPrice && salePrice) {
@@ -1504,7 +1560,7 @@ export async function renderInventory(outlet) {
         treatmentIds.forEach(tid => {
           formData.append('treatments[]', String(tid));
         });
-
+        
         if (imageFile) {
           formData.append('image', imageFile);
         }
@@ -1528,236 +1584,283 @@ export async function renderInventory(outlet) {
   };
 
   const openCreateCategory = async () => {
-    if (!canEdit) return;
+  if (!canEdit) return;
 
-    const r = await Swal.fire({
-      title: 'Nueva categoría',
-      html: `
-        <div class="text-start">
-          <label class="form-label">CODE</label>
-          <input id="swCatCode" class="form-control" placeholder="Ej: MICA_FOTOCROMATICA_NEGRA">
+  const r = await Swal.fire({
+    title: 'Nueva categoría',
+    html: `
+      <div class="text-start">
+        <label class="form-label">CODE</label>
+        <input id="swCatCode" class="form-control" placeholder="Ej: MICA_FOTOCROMATICA_NEGRA">
 
-          <label class="form-label mt-2">Nombre</label>
-          <input id="swCatName" class="form-control" placeholder="Ej: Mica fotocromática negra">
+        <label class="form-label mt-2">Nombre</label>
+        <input id="swCatName" class="form-control" placeholder="Ej: Mica fotocromática negra">
 
-          <label class="form-label mt-2">Descripción (opcional)</label>
-          <input id="swCatDesc" class="form-control" placeholder="Opcional">
+        <label class="form-label mt-2">Descripción (opcional)</label>
+        <input id="swCatDesc" class="form-control" placeholder="Opcional">
 
-          <div class="form-check form-switch mt-3">
-            <input class="form-check-input" type="checkbox" id="swCatIsMica">
-            <label class="form-check-label" for="swCatIsMica">
-              Esta categoría es una mica
-            </label>
+        <div class="form-check form-switch mt-3">
+          <input class="form-check-input" type="checkbox" id="swCatIsMica">
+          <label class="form-check-label" for="swCatIsMica">
+            Esta categoría es una mica
+          </label>
+        </div>
+
+        <div class="row g-2 mt-1">
+          <div class="col-6">
+            <label class="form-label">Precio compra</label>
+            <input id="swCatBuyPrice" type="number" min="0" step="0.01" class="form-control" value="0.00">
           </div>
-
-          <div class="row g-2 mt-1">
-            <div class="col-6">
-              <label class="form-label">Precio compra</label>
-              <input id="swCatBuyPrice" type="number" min="0" step="0.01" class="form-control" value="0.00">
-            </div>
-            <div class="col-6">
-              <label class="form-label">Precio venta</label>
-              <input id="swCatSalePrice" type="number" min="0" step="0.01" class="form-control" value="0.00">
-            </div>
-          </div>
-
-          <div class="small text-muted mt-2">
-            Si marcas la categoría como mica, los productos generados tomarán estos precios.
+          <div class="col-6">
+            <label class="form-label">Precio venta</label>
+            <input id="swCatSalePrice" type="number" min="0" step="0.01" class="form-control" value="0.00">
           </div>
         </div>
-      `,
-      focusConfirm: false,
-      showCancelButton: true,
-      confirmButtonText: 'Guardar',
-      preConfirm: () => {
-        const code = document.getElementById('swCatCode')?.value?.trim() || '';
-        const name = document.getElementById('swCatName')?.value?.trim() || '';
-        const description = document.getElementById('swCatDesc')?.value?.trim() || '';
-        const is_mica = Boolean(document.getElementById('swCatIsMica')?.checked);
-        const buy_price = Number(document.getElementById('swCatBuyPrice')?.value || 0);
-        const sale_price = Number(document.getElementById('swCatSalePrice')?.value || 0);
 
-        if (!code || !name) {
-          Swal.showValidationMessage('CODE y Nombre son obligatorios');
-          return false;
-        }
+        <label class="form-label mt-3">Imagen de la categoría</label>
+        <input id="swCatImage" type="file" accept="image/*" class="form-control">
+        <div class="form-text">
+          Esta imagen será usada por las micas de esta categoría cuando el producto no tenga imagen propia.
+        </div>
 
-        if (Number.isNaN(buy_price) || buy_price < 0) {
-          Swal.showValidationMessage('Precio compra inválido');
-          return false;
-        }
+        <div class="small text-muted mt-2">
+          Si marcas la categoría como mica, los productos generados tomarán estos precios.
+        </div>
+      </div>
+    `,
+    focusConfirm: false,
+    showCancelButton: true,
+    confirmButtonText: 'Guardar',
+    preConfirm: () => {
+      const code = document.getElementById('swCatCode')?.value?.trim() || '';
+      const name = document.getElementById('swCatName')?.value?.trim() || '';
+      const description = document.getElementById('swCatDesc')?.value?.trim() || '';
+      const is_mica = Boolean(document.getElementById('swCatIsMica')?.checked);
+      const buy_price = Number(document.getElementById('swCatBuyPrice')?.value || 0);
+      const sale_price = Number(document.getElementById('swCatSalePrice')?.value || 0);
+      const image = document.getElementById('swCatImage')?.files?.[0] || null;
 
-        if (Number.isNaN(sale_price) || sale_price < 0) {
-          Swal.showValidationMessage('Precio venta inválido');
-          return false;
-        }
-
-        return { code, name, description, is_mica, buy_price, sale_price };
+      if (!code || !name) {
+        Swal.showValidationMessage('CODE y Nombre son obligatorios');
+        return false;
       }
+
+      if (Number.isNaN(buy_price) || buy_price < 0) {
+        Swal.showValidationMessage('Precio compra inválido');
+        return false;
+      }
+
+      if (Number.isNaN(sale_price) || sale_price < 0) {
+        Swal.showValidationMessage('Precio venta inválido');
+        return false;
+      }
+
+      return { code, name, description, is_mica, buy_price, sale_price, image };
+    }
+  });
+
+  if (!r.isConfirmed) return;
+
+  try {
+    const formData = buildCategoryFormData({
+      code: r.value.code,
+      name: r.value.name,
+      description: r.value.description || '',
+      is_mica: r.value.is_mica,
+      buy_price: r.value.buy_price,
+      sale_price: r.value.sale_price,
+      image: r.value.image
     });
 
-    if (!r.isConfirmed) return;
+    await api.post('/categories', formData);
 
-    try {
-      await inventoryService.createCategory({
-        code: r.value.code,
-        name: r.value.name,
-        description: r.value.description || null,
-        is_mica: r.value.is_mica,
-        buy_price: r.value.buy_price,
-        sale_price: r.value.sale_price
-      });
-
-      Swal.fire('Listo', 'Categoría creada.', 'success');
-      await refresh('categories');
-    } catch (e) {
-      console.error(e);
-      Swal.fire('Error', extractAxiosErrorMessage(e), 'error');
-    }
-  };
+    Swal.fire('Listo', 'Categoría creada.', 'success');
+    await refresh('categories');
+  } catch (e) {
+    console.error(e);
+    Swal.fire('Error', extractAxiosErrorMessage(e), 'error');
+  }
+};
 
   const openEditCategory = async (catId) => {
-    if (!canEdit) return;
+  if (!canEdit) return;
 
-    const cat = (categories || []).find(x => String(x.id) === String(catId));
-    const currentName = pickCategoryName(cat);
-    const currentCode = pickCategoryCode(cat);
-    const currentDesc = cat?.description ?? '';
-    const currentIsMica = isMicaCategory(cat);
-    const currentBuyPrice = categoryBuyPrice(cat);
-    const currentSalePrice = categorySalePrice(cat);
+  const cat = (categories || []).find(x => String(x.id) === String(catId));
+  const currentName = pickCategoryName(cat);
+  const currentCode = pickCategoryCode(cat);
+  const currentDesc = cat?.description ?? '';
+  const currentIsMica = isMicaCategory(cat);
+  const currentBuyPrice = categoryBuyPrice(cat);
+  const currentSalePrice = categorySalePrice(cat);
+  const currentImageUrl = categoryImageUrl(cat);
+  const currentHasImage = categoryHasImage(cat);
 
-    const r = await Swal.fire({
-      title: 'Editar categoría',
-      html: `
-        <div class="text-start">
-          <label class="form-label">CODE</label>
-          <input id="swCatCode" class="form-control" value="${safe(currentCode)}">
+  const r = await Swal.fire({
+    title: 'Editar categoría',
+    html: `
+      <div class="text-start">
+        <label class="form-label">CODE</label>
+        <input id="swCatCode" class="form-control" value="${safe(currentCode)}">
 
-          <label class="form-label mt-2">Nombre</label>
-          <input id="swCatName" class="form-control" value="${safe(currentName)}">
+        <label class="form-label mt-2">Nombre</label>
+        <input id="swCatName" class="form-control" value="${safe(currentName)}">
 
-          <label class="form-label mt-2">Descripción (opcional)</label>
-          <input id="swCatDesc" class="form-control" value="${safe(currentDesc)}">
+        <label class="form-label mt-2">Descripción (opcional)</label>
+        <input id="swCatDesc" class="form-control" value="${safe(currentDesc)}">
 
-          <div class="form-check form-switch mt-3">
-            <input class="form-check-input" type="checkbox" id="swCatIsMica" ${currentIsMica ? 'checked' : ''}>
-            <label class="form-check-label" for="swCatIsMica">
-              Esta categoría es una mica
+        <div class="form-check form-switch mt-3">
+          <input class="form-check-input" type="checkbox" id="swCatIsMica" ${currentIsMica ? 'checked' : ''}>
+          <label class="form-check-label" for="swCatIsMica">
+            Esta categoría es una mica
+          </label>
+        </div>
+
+        <div class="row g-2 mt-1">
+          <div class="col-6">
+            <label class="form-label">Precio compra</label>
+            <input id="swCatBuyPrice" type="number" min="0" step="0.01" class="form-control" value="${safe(formatMoneyInput(currentBuyPrice))}">
+          </div>
+          <div class="col-6">
+            <label class="form-label">Precio venta</label>
+            <input id="swCatSalePrice" type="number" min="0" step="0.01" class="form-control" value="${safe(formatMoneyInput(currentSalePrice))}">
+          </div>
+        </div>
+
+        <div class="mt-3">
+          <label class="form-label">Imagen de la categoría</label>
+          <div class="d-flex align-items-center gap-3 flex-wrap">
+            ${currentImageUrl
+              ? `<img src="${safe(currentImageUrl)}" alt="Imagen categoría" style="width:72px;height:72px;object-fit:contain;border:1px solid #ddd;border-radius:8px;background:#fff;">`
+              : '<div class="small text-muted border rounded p-2">Sin imagen actual</div>'
+            }
+
+            <div class="flex-grow-1">
+              <input id="swCatImage" type="file" accept="image/*" class="form-control">
+              <div class="form-text">Sube una imagen nueva para reemplazar la actual.</div>
+            </div>
+          </div>
+        </div>
+
+        ${currentHasImage ? `
+          <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" id="swCatRemoveImage">
+            <label class="form-check-label" for="swCatRemoveImage">
+              Quitar imagen actual
             </label>
           </div>
+        ` : ''}
 
-          <div class="row g-2 mt-1">
-            <div class="col-6">
-              <label class="form-label">Precio compra</label>
-              <input id="swCatBuyPrice" type="number" min="0" step="0.01" class="form-control" value="${safe(formatMoneyInput(currentBuyPrice))}">
-            </div>
-            <div class="col-6">
-              <label class="form-label">Precio venta</label>
-              <input id="swCatSalePrice" type="number" min="0" step="0.01" class="form-control" value="${safe(formatMoneyInput(currentSalePrice))}">
-            </div>
+        <div class="small text-muted mt-2">
+          Si cambias precios, el sistema te preguntará si quieres actualizarlos también en los productos existentes.
+        </div>
+      </div>
+    `,
+    focusConfirm: false,
+    showCancelButton: true,
+    confirmButtonText: 'Guardar',
+    preConfirm: () => {
+      const code = document.getElementById('swCatCode')?.value?.trim() || '';
+      const name = document.getElementById('swCatName')?.value?.trim() || '';
+      const description = document.getElementById('swCatDesc')?.value?.trim() || '';
+      const is_mica = Boolean(document.getElementById('swCatIsMica')?.checked);
+      const buy_price = Number(document.getElementById('swCatBuyPrice')?.value || 0);
+      const sale_price = Number(document.getElementById('swCatSalePrice')?.value || 0);
+      const image = document.getElementById('swCatImage')?.files?.[0] || null;
+      const remove_image = Boolean(document.getElementById('swCatRemoveImage')?.checked);
+
+      if (!code || !name) {
+        Swal.showValidationMessage('CODE y Nombre son obligatorios');
+        return false;
+      }
+
+      if (Number.isNaN(buy_price) || buy_price < 0) {
+        Swal.showValidationMessage('Precio compra inválido');
+        return false;
+      }
+
+      if (Number.isNaN(sale_price) || sale_price < 0) {
+        Swal.showValidationMessage('Precio venta inválido');
+        return false;
+      }
+
+      if (remove_image && image) {
+        Swal.showValidationMessage('Elige solo una opción: quitar imagen o subir una nueva.');
+        return false;
+      }
+
+      return { code, name, description, is_mica, buy_price, sale_price, image, remove_image };
+    }
+  });
+
+  if (!r.isConfirmed) return;
+
+  const pricesChanged =
+    Math.abs(Number(r.value.buy_price) - Number(currentBuyPrice)) > 0.00001 ||
+    Math.abs(Number(r.value.sale_price) - Number(currentSalePrice)) > 0.00001;
+
+  let update_products_prices = false;
+
+  if (pricesChanged && r.value.is_mica) {
+    const confirmPrices = await Swal.fire({
+      title: 'Cambió el precio',
+      html: `
+        <div class="text-start">
+          <p class="mb-2">¿Quieres aplicar estos nuevos precios a todos los productos existentes de esta categoría?</p>
+          <div class="border rounded p-2 bg-light">
+            <div><b>Compra anterior:</b> ${money(currentBuyPrice)}</div>
+            <div><b>Compra nueva:</b> ${money(r.value.buy_price)}</div>
+            <div><b>Venta anterior:</b> ${money(currentSalePrice)}</div>
+            <div><b>Venta nueva:</b> ${money(r.value.sale_price)}</div>
           </div>
-
           <div class="small text-muted mt-2">
-            Si cambias precios, el sistema te preguntará si quieres actualizarlos también en los productos existentes.
+            Esto no modifica pedidos ya creados, solo productos del inventario.
           </div>
         </div>
       `,
-      focusConfirm: false,
+      icon: 'question',
+      showDenyButton: true,
       showCancelButton: true,
-      confirmButtonText: 'Guardar',
-      preConfirm: () => {
-        const code = document.getElementById('swCatCode')?.value?.trim() || '';
-        const name = document.getElementById('swCatName')?.value?.trim() || '';
-        const description = document.getElementById('swCatDesc')?.value?.trim() || '';
-        const is_mica = Boolean(document.getElementById('swCatIsMica')?.checked);
-        const buy_price = Number(document.getElementById('swCatBuyPrice')?.value || 0);
-        const sale_price = Number(document.getElementById('swCatSalePrice')?.value || 0);
-
-        if (!code || !name) {
-          Swal.showValidationMessage('CODE y Nombre son obligatorios');
-          return false;
-        }
-
-        if (Number.isNaN(buy_price) || buy_price < 0) {
-          Swal.showValidationMessage('Precio compra inválido');
-          return false;
-        }
-
-        if (Number.isNaN(sale_price) || sale_price < 0) {
-          Swal.showValidationMessage('Precio venta inválido');
-          return false;
-        }
-
-        return { code, name, description, is_mica, buy_price, sale_price };
-      }
+      confirmButtonText: 'Actualizar productos',
+      denyButtonText: 'Solo categoría',
+      cancelButtonText: 'Cancelar'
     });
 
-    if (!r.isConfirmed) return;
+    if (confirmPrices.isDismissed) return;
 
-    const pricesChanged =
-      Math.abs(Number(r.value.buy_price) - Number(currentBuyPrice)) > 0.00001 ||
-      Math.abs(Number(r.value.sale_price) - Number(currentSalePrice)) > 0.00001;
+    update_products_prices = confirmPrices.isConfirmed;
+  }
 
-    let update_products_prices = false;
+  try {
+    const formData = buildCategoryFormData({
+      code: r.value.code,
+      name: r.value.name,
+      description: r.value.description || '',
+      is_mica: r.value.is_mica,
+      buy_price: r.value.buy_price,
+      sale_price: r.value.sale_price,
+      update_products_prices,
+      remove_image: r.value.remove_image,
+      image: r.value.image
+    });
 
-    if (pricesChanged && r.value.is_mica) {
-      const confirmPrices = await Swal.fire({
-        title: 'Cambió el precio',
-        html: `
-          <div class="text-start">
-            <p class="mb-2">¿Quieres aplicar estos nuevos precios a todos los productos existentes de esta categoría?</p>
-            <div class="border rounded p-2 bg-light">
-              <div><b>Compra anterior:</b> ${money(currentBuyPrice)}</div>
-              <div><b>Compra nueva:</b> ${money(r.value.buy_price)}</div>
-              <div><b>Venta anterior:</b> ${money(currentSalePrice)}</div>
-              <div><b>Venta nueva:</b> ${money(r.value.sale_price)}</div>
-            </div>
-            <div class="small text-muted mt-2">
-              Esto no modifica pedidos ya creados, solo productos del inventario.
-            </div>
-          </div>
-        `,
-        icon: 'question',
-        showDenyButton: true,
-        showCancelButton: true,
-        confirmButtonText: 'Actualizar productos',
-        denyButtonText: 'Solo categoría',
-        cancelButtonText: 'Cancelar'
-      });
+    const res = await api.post(`/categories/${catId}`, formData);
 
-      if (confirmPrices.isDismissed) return;
+    const updatedCount = Number(res?.updated_products ?? res?.data?.updated_products ?? 0);
 
-      update_products_prices = confirmPrices.isConfirmed;
-    }
+    Swal.fire(
+      'Listo',
+      update_products_prices
+        ? `Categoría actualizada. Productos actualizados: ${updatedCount}.`
+        : 'Categoría actualizada.',
+      'success'
+    );
 
-    try {
-      const res = await inventoryService.updateCategory(catId, {
-        code: r.value.code,
-        name: r.value.name,
-        description: r.value.description || null,
-        is_mica: r.value.is_mica,
-        buy_price: r.value.buy_price,
-        sale_price: r.value.sale_price,
-        update_products_prices
-      });
-
-      const updatedCount = Number(res?.updated_products ?? res?.data?.updated_products ?? 0);
-
-      Swal.fire(
-        'Listo',
-        update_products_prices
-          ? `Categoría actualizada. Productos actualizados: ${updatedCount}.`
-          : 'Categoría actualizada.',
-        'success'
-      );
-
-      await refresh('categories');
-    } catch (e) {
-      console.error(e);
-      Swal.fire('Error', extractAxiosErrorMessage(e), 'error');
-    }
-  };
+    await refresh('categories');
+  } catch (e) {
+    console.error(e);
+    Swal.fire('Error', extractAxiosErrorMessage(e), 'error');
+  }
+};
 
   const deleteCategory = async (catId) => {
     if (!canEdit) return;

@@ -196,3 +196,37 @@ DROP CONSTRAINT chk_products_axis_range;
 ALTER TABLE products
 ADD CONSTRAINT chk_products_axis_range
 CHECK (axis IS NULL OR (axis >= 1 AND axis <= 180));
+
+/* ============================================================
+   AUROLAB - Imagen por categoría
+   ============================================================ */
+
+ALTER TABLE categories
+ADD COLUMN IF NOT EXISTS image_filename VARCHAR(190) NULL AFTER last_price_update_at,
+ADD COLUMN IF NOT EXISTS image_mime VARCHAR(80) NULL AFTER image_filename,
+ADD COLUMN IF NOT EXISTS image_path VARCHAR(255) NULL AFTER image_mime;
+
+
+/* ============================================================
+   Revisión rápida
+   ============================================================ */
+
+DESCRIBE categories;
+
+
+/* ============================================================
+   Confirmar columnas de imagen en categorías
+   ============================================================ */
+
+SELECT 
+    id,
+    code,
+    name,
+    is_mica,
+    buy_price,
+    sale_price,
+    image_filename,
+    image_mime,
+    image_path
+FROM categories
+ORDER BY name;
