@@ -6,6 +6,8 @@
 // - Eje viene por default desde p.axis si existe
 // - Spinner morado #7E57C2 sin modal al crear pedido
 // - Conserva flujo de biselado personalizado
+// - POS limpio: sin SKU visible en cards/carrito/detalle
+// - Sin tabla inferior de Stock disponible
 
 import { api } from '../services/api.js';
 import { money } from '../utils/helpers.js';
@@ -122,6 +124,7 @@ export async function renderPOS(outlet) {
   let products = [];
   let inventory = [];
   let categoriesApi = [];
+  let imageObserver = null;
   let treatmentsCatalog = [];
   let lensTypesCatalog = [];
 
@@ -141,6 +144,10 @@ export async function renderPOS(outlet) {
   let searchQuery = '';
   let discountMode = 'order';
   let orderDiscountPct = 0;
+
+  let visibleProductCount = 30;
+  const PRODUCT_PAGE_SIZE = 30;
+  let productScrollObserver = null;
 
   const categoryById = new Map();
 
@@ -234,6 +241,129 @@ export async function renderPOS(outlet) {
         name: String(c?.name || '').trim()
       });
     }
+  };
+    const normalizeApiBlobEndpoint = (url) => {
+    const raw = String(url || '').trim();
+
+    if (!raw) return '';
+
+    try {
+      if (raw.startsWith('http://') || raw.startsWith('https://')) {
+        const u = new URL(raw);
+        return u.pathname.replace(/^\/api/, '') || raw;
+      }
+    } catch (_) {}
+
+    return raw.replace(/^\/api/, '');
+  };
+
+  const isMicaProduct = (p) => {
+    if (!p) return false;
+
+    if (
+      p.category_is_mica === true ||
+      p.is_mica === true ||
+      Number(p.category_is_mica ?? p.is_mica ?? 0) === 1
+    ) {
+      return true;
+    }
+
+    const code = String(
+      p.category_code ||
+      p.category ||
+      getProductCategoryCode(p) ||
+      ''
+    ).trim().toUpperCase();
+
+    return code === 'MICAS' ||
+      code.startsWith('MICA_') ||
+      code.startsWith('MICA-');
+  };
+
+  const productCylinderNumber = (p) => {
+    const raw = p?.cylinder ?? p?.cyl ?? null;
+
+    if (raw === null || raw === undefined || String(raw).trim() === '') {
+      return null;
+    }
+
+    const n = Number(raw);
+
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const askAxisForMicaIfNeeded = async (p) => {
+    const isMica = isMicaProduct(p);
+    const cylinder = productCylinderNumber(p);
+
+    if (!isMica || cylinder === null || cylinder >= 0) {
+      return null;
+    }
+
+    const result = await Swal.fire({
+      title: 'Capturar eje',
+      html: `
+        <div class="text-start">
+          <div class="mb-2">
+            Producto: <b>${safe(p.name || 'Mica')}</b>
+          </div>
+
+          <div class="mb-2">
+            Cilindro: <b>${safe(cylinder)}</b>
+          </div>
+
+          <label class="form-label">Eje</label>
+          <input
+            id="swMicaAxis"
+            type="number"
+            min="1"
+            max="180"
+            step="1"
+            class="form-control"
+            placeholder="Ej: 90"
+          >
+
+          <div class="form-text">
+            El eje es obligatorio cuando la mica tiene cilindro negativo.
+          </div>
+        </div>
+      `,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Agregar',
+      cancelButtonText: 'Cancelar',
+      focusConfirm: false,
+      didOpen: () => {
+        document.getElementById('swMicaAxis')?.focus();
+      },
+      preConfirm: () => {
+        const raw = String(document.getElementById('swMicaAxis')?.value || '').trim();
+        const axis = Number(raw);
+
+        if (!raw) {
+          Swal.showValidationMessage('Captura el eje.');
+          return false;
+        }
+
+        if (!Number.isInteger(axis)) {
+          Swal.showValidationMessage('El eje debe ser un número entero.');
+          return false;
+        }
+
+        if (axis < 1 || axis > 180) {
+          Swal.showValidationMessage('El eje debe estar entre 1 y 180.');
+          return false;
+        }
+
+        return axis;
+      }
+    });
+
+    if (!result.isConfirmed) {
+      return false;
+    }
+
+    return Number(result.value);
   };
 
   const getProductCategoryCode = (p) => {
@@ -343,8 +473,7 @@ export async function renderPOS(outlet) {
 
     return `${pid}::${variantId}::${axis}::${tKey}::${customKey}`;
   };
-
-  async function loadCore() {
+    async function loadCore() {
     DBG('loadCore');
 
     const [prodRes, invRes, catRes, trRes, ltRes] = await Promise.allSettled([
@@ -433,66 +562,90 @@ export async function renderPOS(outlet) {
       };
     }
   }
+    async function getProtectedImageUrl(product) {
+      const pid = Number(product?.id || 0);
 
-  async function getProtectedImageUrl(product) {
-    const pid = Number(product?.id || 0);
+      if (!pid) return PLACEHOLDER_IMG;
 
-    if (!pid) return PLACEHOLDER_IMG;
+      const cacheKey = `thumb:${pid}`;
 
-    if (imageUrlCache.has(pid)) return imageUrlCache.get(pid);
+      if (imageUrlCache.has(cacheKey)) return imageUrlCache.get(cacheKey);
 
-    if (!token) {
-      imageUrlCache.set(pid, PLACEHOLDER_IMG);
-      return PLACEHOLDER_IMG;
-    }
-
-    const endpoint = product?.imageUrl || `/products/${pid}/image`;
-
-    try {
-      const blob = await api.getBlob(endpoint);
-
-      if (!blob || blob.size === 0) {
-        throw new Error('Empty image blob');
+      if (!token) {
+        imageUrlCache.set(cacheKey, PLACEHOLDER_IMG);
+        return PLACEHOLDER_IMG;
       }
 
-      const url = URL.createObjectURL(blob);
-      imageUrlCache.set(pid, url);
+      const rawEndpoint = `/products/${pid}/thumb`;
+      const endpoint = normalizeApiBlobEndpoint(rawEndpoint);
 
-      return url;
-    } catch (e) {
-      console.error('POS image error', {
-        productId: pid,
-        endpoint,
-        error: e?.message || e
-      });
+      try {
+        const blob = await api.getBlob(endpoint);
 
-      imageUrlCache.set(pid, PLACEHOLDER_IMG);
+        if (!blob || blob.size === 0) {
+          throw new Error('Empty thumbnail blob');
+        }
 
-      return PLACEHOLDER_IMG;
-    }
-  }
+        const url = URL.createObjectURL(blob);
+        imageUrlCache.set(cacheKey, url);
 
-  async function hydrateImages(container) {
-    const imgs = container.querySelectorAll('img[data-imgpid]');
-    const tasks = [];
+        return url;
+      } catch (e) {
+        console.error('POS thumbnail error', {
+          productId: pid,
+          rawEndpoint,
+          endpoint,
+          error: e?.message || e
+        });
 
-    for (const img of imgs) {
-      const pid = Number(img.dataset.imgpid || 0);
-      const product = products.find(p => Number(p.id) === pid);
+        imageUrlCache.set(cacheKey, PLACEHOLDER_IMG);
 
-      img.onerror = () => {
-        img.onerror = null;
-        img.src = PLACEHOLDER_IMG;
-      };
-
-      tasks.push((async () => {
-        const url = await getProtectedImageUrl(product);
-        img.src = url || PLACEHOLDER_IMG;
-      })());
+        return PLACEHOLDER_IMG;
+      }
     }
 
-    await Promise.allSettled(tasks);
-  }
+    async function getProtectedFullImageUrl(product) {
+      const pid = Number(product?.id || 0);
+
+      if (!pid) return PLACEHOLDER_IMG;
+
+      const cacheKey = `full:${pid}`;
+
+      if (imageUrlCache.has(cacheKey)) return imageUrlCache.get(cacheKey);
+
+      if (!token) {
+        imageUrlCache.set(cacheKey, PLACEHOLDER_IMG);
+        return PLACEHOLDER_IMG;
+      }
+
+      const rawEndpoint = product?.imageUrl || product?.image_url || `/products/${pid}/image`;
+      const endpoint = normalizeApiBlobEndpoint(rawEndpoint);
+
+      try {
+        const blob = await api.getBlob(endpoint);
+
+        if (!blob || blob.size === 0) {
+          throw new Error('Empty full image blob');
+        }
+
+        const url = URL.createObjectURL(blob);
+        imageUrlCache.set(cacheKey, url);
+
+        return url;
+      } catch (e) {
+        console.error('POS full image error', {
+          productId: pid,
+          rawEndpoint,
+          endpoint,
+          error: e?.message || e
+        });
+
+        imageUrlCache.set(cacheKey, PLACEHOLDER_IMG);
+
+        return PLACEHOLDER_IMG;
+      }
+    }
+
 
   await loadCore();
   await Promise.all([
@@ -511,7 +664,7 @@ export async function renderPOS(outlet) {
 
         <div class="input-group" style="max-width:420px;">
           <span class="input-group-text">🔎</span>
-          <input id="posSearch" class="form-control" placeholder="Buscar por SKU o nombre..." />
+          <input id="posSearch" class="form-control" placeholder="Buscar producto..." />
         </div>
       </div>
 
@@ -554,30 +707,6 @@ export async function renderPOS(outlet) {
           </div>
 
           <div id="productsGrid" class="row g-3"></div>
-        </div>
-
-        <div class="card p-3 mt-3">
-          <h6 class="mb-0">Stock disponible</h6>
-
-          <div class="table-responsive mt-2">
-            <table class="table table-sm align-middle" id="tblPosStock" style="width:100%">
-              <thead>
-                <tr>
-                  <th>SKU</th>
-                  <th>Producto</th>
-                  <th>Categoría</th>
-                  <th>Tipo</th>
-                  <th class="text-end">Stock</th>
-                  <th class="text-end">Reservado</th>
-                  <th class="text-end">Disponible</th>
-                  <th>Estatus</th>
-                  <th class="text-end">Precio</th>
-                </tr>
-              </thead>
-
-              <tbody id="posStockTbody"></tbody>
-            </table>
-          </div>
         </div>
       </div>
 
@@ -694,10 +823,53 @@ export async function renderPOS(outlet) {
     const q = searchQuery.trim().toLowerCase();
 
     const qOk = !q
-      || String(p.sku || '').toLowerCase().includes(q)
-      || String(p.name || '').toLowerCase().includes(q);
+      || String(p.name || '').toLowerCase().includes(q)
+      || String(getProductCategoryLabel(p) || '').toLowerCase().includes(q);
 
     return catOk && qOk;
+  };
+
+  const getFilteredProducts = () => {
+    return (products || []).filter(matchesFilter);
+  };
+
+  const resetProductPagination = () => {
+    visibleProductCount = PRODUCT_PAGE_SIZE;
+  };
+
+  const disconnectProductScrollObserver = () => {
+    if (productScrollObserver) {
+      productScrollObserver.disconnect();
+      productScrollObserver = null;
+    }
+  };
+
+  const mountProductScrollObserver = (filteredTotal) => {
+    disconnectProductScrollObserver();
+
+    const sentinel = outlet.querySelector('#posLoadMoreSentinel');
+
+    if (!sentinel) return;
+    if (visibleProductCount >= filteredTotal) return;
+
+    productScrollObserver = new IntersectionObserver((entries) => {
+      const entry = entries[0];
+
+      if (!entry || !entry.isIntersecting) return;
+
+      visibleProductCount = Math.min(
+        visibleProductCount + PRODUCT_PAGE_SIZE,
+        filteredTotal
+      );
+
+      renderCards();
+    }, {
+      root: null,
+      rootMargin: '500px 0px',
+      threshold: 0.01
+    });
+
+    productScrollObserver.observe(sentinel);
   };
 
   const treatmentsHtmlBlock = (arr) => {
@@ -712,67 +884,18 @@ export async function renderPOS(outlet) {
     `;
   };
 
-  function renderStockTableBody() {
-    const tbody = outlet.querySelector('#posStockTbody');
-
-    tbody.innerHTML = (inventory || []).map(r => {
-      const p = r.product || r;
-      const st = Number(r.stock ?? 0);
-      const rs = Number(r.reserved ?? 0);
-      const av = Number(r.available ?? (st - rs));
-
-      return `
-        <tr class="${av <= CRITICAL_STOCK ? 'table-warning' : ''}">
-          <td>${safe(p.sku || '')}</td>
-          <td>${safe(p.name || '')}</td>
-          <td>${safe(getProductCategoryLabel(p) || '—')}</td>
-          <td>${safe(p.type || '')}</td>
-          <td class="text-end fw-semibold">${st}</td>
-          <td class="text-end">${rs}</td>
-          <td class="text-end fw-semibold">${av}</td>
-          <td>${stockBadge(av)}</td>
-          <td class="text-end">${money(p.salePrice ?? p.sale_price ?? 0)}</td>
-        </tr>
-      `;
-    }).join('');
-  }
-
-  function ensureDataTable() {
-    if (!(window.$ && $.fn.dataTable)) return;
-
-    if ($.fn.DataTable.isDataTable('#tblPosStock')) {
-      $('#tblPosStock').DataTable().destroy();
-    }
-
-    $('#tblPosStock').DataTable({
-      pageLength: 8,
-      order: [[6, 'asc']],
-      language: {
-        search: 'Buscar:',
-        lengthMenu: 'Mostrar _MENU_',
-        info: 'Mostrando _START_ a _END_ de _TOTAL_',
-        paginate: {
-          previous: 'Anterior',
-          next: 'Siguiente'
-        },
-        zeroRecords: 'No hay registros'
-      }
-    });
-  }
-
-  function refreshInventoryTable() {
-    if (window.$ && $.fn.dataTable && $.fn.DataTable.isDataTable('#tblPosStock')) {
-      $('#tblPosStock').DataTable().destroy();
-    }
-
-    renderStockTableBody();
-    ensureDataTable();
-  }
-
   const renderCards = async () => {
-    const filtered = (products || []).filter(matchesFilter);
+    if (imageObserver) {
+      imageObserver.disconnect();
+      imageObserver = null;
+    }
 
-    countEl.textContent = `${filtered.length} producto(s)`;
+    disconnectProductScrollObserver();
+
+    const filtered = getFilteredProducts();
+    const visibleProducts = filtered.slice(0, visibleProductCount);
+
+    countEl.textContent = `${visibleProducts.length} de ${filtered.length} producto(s)`;
 
     if (!filtered.length) {
       grid.innerHTML = `
@@ -784,82 +907,164 @@ export async function renderPOS(outlet) {
       return;
     }
 
-    grid.innerHTML = filtered.map(p => {
-      const available = getAvailable(p.id);
-      const disabled = available <= 0 ? 'disabled' : '';
-      const critical = available > 0 && available <= CRITICAL_STOCK;
+    grid.innerHTML = `
+      ${visibleProducts.map(p => {
+        const available = getAvailable(p.id);
+        const disabled = available <= 0 ? 'disabled' : '';
+        const critical = available > 0 && available <= CRITICAL_STOCK;
 
-      return `
-        <div class="col-12 col-sm-6 col-xl-4">
-          <div class="card h-100 ${critical ? 'border-warning' : ''}">
-            <div style="width:100%; aspect-ratio: 16/10; overflow:hidden; background:#f8f9fa;">
-              <img
-                src="${PLACEHOLDER_IMG}"
-                data-imgpid="${p.id}"
-                alt="${safe(p.name || 'Producto')}"
-                style="width:100%; height:100%; object-fit:cover; display:block;"
-                loading="lazy"
-              />
-            </div>
+        return `
+          <div class="col-12 col-sm-6 col-xl-4">
+            <div class="card h-100 ${critical ? 'border-warning' : ''}">
+              <div style="width:100%; aspect-ratio: 16/10; overflow:hidden; background:#f8f9fa;">
+                <img
+                  src="${PLACEHOLDER_IMG}"
+                  data-imgpid="${p.id}"
+                  alt="${safe(p.name || 'Producto')}"
+                  style="width:100%; height:100%; object-fit:contain; display:block; background:#fff;"
+                  loading="lazy"
+                />
+              </div>
 
-            <div class="card-body d-flex flex-column">
-              <div class="d-flex align-items-start justify-content-between gap-2">
-                <div class="fw-semibold" style="white-space: normal; overflow: visible;">
-                  ${safe(p.name)}
+              <div class="card-body d-flex flex-column">
+                <div class="d-flex align-items-start justify-content-between gap-2">
+                  <div class="fw-semibold" style="white-space: normal; overflow-wrap: anywhere; line-height:1.25;">
+                    ${safe(p.name)}
+                  </div>
+
+                  <div class="text-end">
+                    ${stockBadge(available)}
+                  </div>
                 </div>
 
-                <div class="text-end">
-                  <div>${safe(p.sku)}</div>
-                  <div>${stockBadge(available)}</div>
+                <div class="mt-2">
+                  ${getProductCategoryLabel(p) ? `<div><b>${safe(getProductCategoryLabel(p))}</b></div>` : ''}
+                  ${p.type ? `<div class="text-muted small">${safe(p.type)}</div>` : ''}
                 </div>
-              </div>
 
-              <div class="mt-1">
-                ${getProductCategoryLabel(p) ? `<span class="me-2"><b>${safe(getProductCategoryLabel(p))}</b></span>` : ''}
-                ${p.type ? `<span>${safe(p.type)}</span>` : ''}
-              </div>
+                ${treatmentsHtmlBlock(p.treatments)}
 
-              ${treatmentsHtmlBlock(p.treatments)}
+                <div class="mt-2 d-flex align-items-center justify-content-between gap-2">
+                  <div class="fw-bold">${money(p.salePrice ?? p.sale_price ?? 0)}</div>
 
-              <div class="mt-2 d-flex align-items-center justify-content-between">
-                <div class="fw-bold">${money(p.salePrice ?? p.sale_price ?? 0)}</div>
-
-                <div class="${critical ? 'text-danger' : ''}">
-                  Disponible: <b>${available}</b>
+                  <div class="${critical ? 'text-danger' : 'text-muted'} small">
+                    Disp: <b>${available}</b>
+                  </div>
                 </div>
+
+                <div class="mt-auto pt-3 d-flex gap-2">
+                  <button type="button" class="btn btn-brand flex-grow-1" data-add="${p.id}" ${disabled}>
+                    Agregar
+                  </button>
+
+                  <button type="button" class="btn btn-outline-brand btn-sm" data-details="${p.id}" title="Ver detalles">
+                    Detalles
+                  </button>
+                </div>
+
+                ${
+                  available <= 0
+                    ? ``
+                    : critical
+                      ? `<div class="mt-2 text-danger small">Stock crítico</div>`
+                      : ``
+                }
               </div>
-
-              <div class="mt-3 d-flex gap-2">
-                <button type="button" class="btn btn-brand flex-grow-1" data-add="${p.id}" ${disabled}>
-                  Agregar
-                </button>
-
-                <button type="button" class="btn btn-outline-brand btn-sm" data-details="${p.id}" title="Ver detalles">
-                  Detalles
-                </button>
-              </div>
-
-              ${
-                available <= 0
-                  ? ``
-                  : critical
-                    ? `<div class="mt-2 text-danger">Stock crítico</div>`
-                    : ``
-              }
             </div>
           </div>
-        </div>
-      `;
-    }).join('');
+        `;
+      }).join('')}
 
-    await hydrateImages(grid);
+      ${
+        visibleProductCount < filtered.length
+          ? `
+            <div class="col-12">
+              <div id="posLoadMoreSentinel" class="text-center py-4">
+                <div class="spinner-border spinner-border-sm" role="status"></div>
+                <div class="small text-muted mt-2">
+                  Cargando más productos...
+                </div>
+              </div>
+            </div>
+          `
+          : `
+            <div class="col-12">
+              <div class="text-center text-muted small py-3">
+                No hay más productos.
+              </div>
+            </div>
+          `
+      }
+    `;
+
+    hydrateImages(grid);
+    mountProductScrollObserver(filtered.length);
   };
 
-  const showProductDetails = async (p) => {
+  function hydrateImages(container) {
+    const imgs = Array.from(container.querySelectorAll('img[data-imgpid]'));
+
+    if (!imgs.length) return;
+
+    if (imageObserver) {
+      imageObserver.disconnect();
+    }
+
+    const loadImage = async (img) => {
+      if (!img || img.dataset.loaded === '1') return;
+
+      img.dataset.loaded = '1';
+
+      const pid = Number(img.dataset.imgpid || 0);
+      const product = products.find(p => Number(p.id) === pid);
+
+      img.onerror = () => {
+        img.onerror = null;
+        img.src = PLACEHOLDER_IMG;
+      };
+
+      try {
+        const url = await getProtectedImageUrl(product);
+        img.src = url || PLACEHOLDER_IMG;
+      } catch (_) {
+        img.src = PLACEHOLDER_IMG;
+      }
+    };
+
+    /**
+     * Carga inmediata de las primeras imágenes visibles.
+     * Esto evita que el usuario vea placeholder por 1-2 segundos
+     * en los primeros productos al entrar al POS.
+     */
+    imgs.slice(0, 12).forEach(img => {
+      loadImage(img);
+    });
+
+    imageObserver = new IntersectionObserver((entries, observer) => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+
+        const img = entry.target;
+
+        observer.unobserve(img);
+        loadImage(img);
+      });
+    }, {
+      root: null,
+      rootMargin: '900px 0px',
+      threshold: 0.01
+    });
+
+    imgs.slice(12).forEach(img => {
+      imageObserver.observe(img);
+    });
+  }
+
+    const showProductDetails = async (p) => {
     const available = getAvailable(p.id);
     const totalStock = getStockTotal(p.id);
     const reserved = getReserved(p.id);
-    const imgUrl = await getProtectedImageUrl(p);
+    const imgUrl = await getProtectedFullImageUrl(p);
 
     const desc = String(p.description ?? '').trim();
 
@@ -873,12 +1078,12 @@ export async function renderPOS(outlet) {
           <img
             src="${imgUrl}"
             alt="${safe(p.name)}"
-            style="width:120px;height:120px;object-fit:cover;border-radius:12px;border:1px solid #e9ecef;"
+            style="width:120px;height:120px;object-fit:contain;border-radius:12px;border:1px solid #e9ecef;background:#fff;"
           />
 
           <div style="min-width:0;">
             <div class="fw-bold">${safe(p.name)}</div>
-            <div>${safe(p.sku)}</div>
+            <div class="text-muted small">${safe(getProductCategoryLabel(p) || 'Producto')}</div>
 
             <div class="mt-1">
               ${stockBadge(available)}
@@ -1085,12 +1290,17 @@ export async function renderPOS(outlet) {
             <div class="fw-semibold">${safe(it.name)}</div>
 
             <div>
-              ${safe(it.sku || 'CUSTOM-BISEL')}
-              · ${money(it.salePrice ?? it.sale_price ?? 0)}
+              ${money(it.salePrice ?? it.sale_price ?? 0)}
               · ${isCustom ? 'Personalizado' : `Disponible: ${available}`}
             </div>
 
             ${treatmentsHtml(it)}
+
+            ${
+              !isCustom && it.cylinder !== null && it.cylinder !== undefined && String(it.cylinder).trim() !== ''
+                ? `<div class="mt-1"><b>Cilindro:</b> ${safe(it.cylinder)}</div>`
+                : ''
+            }
 
             ${
               !isCustom && it.axis !== null && it.axis !== undefined && String(it.axis).trim() !== ''
@@ -1243,8 +1453,7 @@ export async function renderPOS(outlet) {
         </div>
       </div>
     `;
-
-    const bindCustomTreatmentEvents = () => {
+        const bindCustomTreatmentEvents = () => {
       const box = document.getElementById('customBiselTreatmentsBox');
 
       if (!box) return;
@@ -1522,7 +1731,7 @@ export async function renderPOS(outlet) {
     renderCart();
   }
 
-  const addToCart = async (p) => {
+    const addToCart = async (p) => {
     const available = getAvailable(p.id);
 
     if (available <= 0) {
@@ -1531,7 +1740,18 @@ export async function renderPOS(outlet) {
     }
 
     const selectedTreatments = normalizeTreatments(p.treatments || []);
-    const selectedAxis = p.axis ?? null;
+
+    let selectedAxis = p.axis ?? null;
+
+    const micaAxis = await askAxisForMicaIfNeeded(p);
+
+    if (micaAxis === false) {
+      return false;
+    }
+
+    if (micaAxis !== null) {
+      selectedAxis = micaAxis;
+    }
 
     const baseItem = {
       ...p,
@@ -1566,7 +1786,6 @@ export async function renderPOS(outlet) {
 
     return true;
   };
-
   function mountCustomerAutocomplete() {
     if (isOptica) return;
 
@@ -1703,11 +1922,12 @@ export async function renderPOS(outlet) {
     const catBtn = e.target?.closest('[data-cat]');
 
     if (catBtn) {
-      selectedCategory = String(catBtn.dataset.cat || 'ALL');
-      renderCategoryButtons();
-      await renderCards();
-      return;
-    }
+    selectedCategory = String(catBtn.dataset.cat || 'ALL');
+    resetProductPagination();
+    renderCategoryButtons();
+    await renderCards();
+    return;
+  }
 
     if (detailsId) {
       const p = products.find(x => String(x.id) === String(detailsId));
@@ -1766,6 +1986,7 @@ export async function renderPOS(outlet) {
 
   outlet.querySelector('#posSearch')?.addEventListener('input', async (e) => {
     searchQuery = String(e.target.value || '');
+    resetProductPagination();
     await renderCards();
   });
 
@@ -1944,9 +2165,10 @@ export async function renderPOS(outlet) {
       renderCart();
 
       await loadCore();
+      resetProductPagination();
       renderCategoryButtons();
-      refreshInventoryTable();
       await renderCards();
+
 
       Swal.fire('Pedido registrado', 'Proceso completado.', 'success');
     } catch (err) {
@@ -1966,8 +2188,6 @@ export async function renderPOS(outlet) {
   });
 
   renderCategoryButtons();
-  renderStockTableBody();
-  ensureDataTable();
   await renderCards();
   renderCart();
   setCheckoutState();

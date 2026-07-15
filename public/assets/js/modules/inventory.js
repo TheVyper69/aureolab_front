@@ -53,7 +53,7 @@ function isMicaCategory(c) {
 }
 
 function isContactsCategory(c) {
-  const code = pickCategoryCode(c).toUpperCase();
+  const code = pickCategoryCode(c).toUpperCase().replace(/\s+/g, '_');
   return code === 'LENTES_CONTACTO';
 }
 
@@ -459,6 +459,107 @@ export async function renderInventory(outlet) {
 
   let productModal = null;
   let previewObjectUrl = null;
+  let categoryObjectUrls = [];
+  let selectedProductIds = new Set();
+
+  function updateBulkDeleteButton() {
+    const btn = outlet.querySelector('#btnBulkDeleteProducts');
+
+    if (!btn) return;
+
+    const count = selectedProductIds.size;
+
+    btn.disabled = count === 0;
+    btn.textContent = count > 0
+      ? `Borrar seleccionados (${count})`
+      : 'Borrar seleccionados';
+  }
+
+  function syncInventorySelectionChecks() {
+    outlet.querySelectorAll('[data-product-check]').forEach(chk => {
+      chk.checked = selectedProductIds.has(String(chk.dataset.productCheck));
+    });
+
+    const checks = Array.from(outlet.querySelectorAll('[data-product-check]'));
+    const visibleChecked = checks.filter(chk => chk.checked).length;
+    const all = outlet.querySelector('#chkInvAll');
+
+    if (all) {
+      all.checked = checks.length > 0 && visibleChecked === checks.length;
+      all.indeterminate = visibleChecked > 0 && visibleChecked < checks.length;
+    }
+
+    updateBulkDeleteButton();
+  }
+
+  function selectedProductsSummary() {
+    const ids = Array.from(selectedProductIds).map(id => String(id));
+
+    return inventoryRows
+      .map(r => r.product || {})
+      .filter(p => ids.includes(String(p.id)))
+      .map(p => ({
+        id: p.id,
+        sku: p.sku,
+        name: p.name,
+        category: p.categoryLabel || p.categoryCode || ''
+      }));
+  }
+
+  function clearCategoryObjectUrls() {
+    categoryObjectUrls.forEach(url => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch (_) {}
+    });
+
+    categoryObjectUrls = [];
+  }
+
+  async function loadProtectedImageInto(imgEl, url) {
+    if (!imgEl || !url) return;
+
+    try {
+      const token = authService.getToken();
+
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Accept: 'image/*',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      });
+
+      if (!res.ok || res.status === 204) {
+        return;
+      }
+
+      const blob = await res.blob();
+
+      if (!blob || blob.size === 0) {
+        return;
+      }
+
+      const objectUrl = URL.createObjectURL(blob);
+      categoryObjectUrls.push(objectUrl);
+
+      imgEl.src = objectUrl;
+      imgEl.classList.remove('d-none');
+
+      const badge = imgEl.parentElement?.querySelector('.cat-img-loading');
+      if (badge) badge.remove();
+    } catch (err) {
+      console.warn('No se pudo cargar imagen protegida:', err);
+    }
+  }
+
+  async function loadCategoryThumbnails() {
+    const imgs = Array.from(document.querySelectorAll('[data-cat-image-url]'));
+
+    await Promise.all(
+      imgs.map(img => loadProtectedImageInto(img, img.dataset.catImageUrl))
+    );
+  }
 
   async function loadProtectedPreview(productId) {
     if (!productId) {
@@ -659,21 +760,26 @@ export async function renderInventory(outlet) {
   };
 
   const renderTopActions = () => {
-    const box = outlet.querySelector('#topActions');
-    if (!box) return;
+  const box = outlet.querySelector('#topActions');
+  if (!box) return;
 
-    if (view === 'inventory') {
-      box.innerHTML = `
-        <button class="btn btn-outline-brand" id="btnRefresh">Actualizar</button>
-        <button class="btn btn-brand" id="btnNewProduct">Nuevo producto</button>
-      `;
-    } else {
-      box.innerHTML = `
-        <button class="btn btn-outline-brand" id="btnRefresh">Actualizar</button>
-        <button class="btn btn-brand" id="btnNewCategory">Nueva categoría</button>
-      `;
-    }
-  };
+  if (view === 'inventory') {
+    box.innerHTML = `
+      <button class="btn btn-outline-danger" id="btnBulkDeleteProducts" data-bulk-delete="1" disabled>
+        Borrar seleccionados
+      </button>
+      <button class="btn btn-outline-brand" id="btnRefresh">Actualizar</button>
+      <button class="btn btn-brand" id="btnNewProduct">Nuevo producto</button>
+    `;
+  } else {
+    box.innerHTML = `
+      <button class="btn btn-outline-brand" id="btnRefresh">Actualizar</button>
+      <button class="btn btn-brand" id="btnNewCategory">Nueva categoría</button>
+    `;
+  }
+
+  updateBulkDeleteButton();
+};
 
   const renderProductModalHtml = () => {
     const categoryOptions = (categories || []).map(c => {
@@ -945,10 +1051,26 @@ export async function renderInventory(outlet) {
 
     content.innerHTML = `
       <div class="card p-3">
+        ${canEdit ? `
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+            <div class="small text-muted">
+              Selecciona productos para borrarlos en grupo.
+            </div>
+            <button class="btn btn-sm btn-outline-secondary" id="btnClearSelection" data-clear-selection="1" ${selectedProductIds.size === 0 ? 'disabled' : ''}>
+              Limpiar selección
+            </button>
+          </div>
+        ` : ''}
+
         <div class="table-responsive">
           <table id="tblInventory" class="table table-striped align-middle" style="width:100%">
             <thead>
               <tr>
+                ${canEdit ? `
+                  <th style="width:38px;">
+                    <input type="checkbox" class="form-check-input" id="chkInvAll" title="Seleccionar visibles">
+                  </th>
+                ` : ''}
                 <th>SKU</th>
                 <th>Nombre</th>
                 <th>Categoría</th>
@@ -965,9 +1087,20 @@ export async function renderInventory(outlet) {
                 const available = Number(r.available ?? 0);
                 const min = Number(p.minStock ?? 0);
                 const low = available <= min;
+                const checked = selectedProductIds.has(String(p.id)) ? 'checked' : '';
 
                 return `
                   <tr class="${low ? 'table-warning' : ''}">
+                    ${canEdit ? `
+                      <td>
+                        <input
+                          type="checkbox"
+                          class="form-check-input"
+                          data-product-check="${safe(p.id)}"
+                          ${checked}
+                        >
+                      </td>
+                    ` : ''}
                     <td>${safe(p.sku)}</td>
                     <td>
                       ${safe(p.name)}
@@ -993,14 +1126,22 @@ export async function renderInventory(outlet) {
         </div>
 
         <div class="small text-muted mt-2">
-          ${canEdit ? 'Admin: CRUD + stock.' : 'Solo admin logeado puede editar.'}
+          ${canEdit ? 'Admin: CRUD + stock + borrado masivo.' : 'Solo admin logeado puede editar.'}
         </div>
       </div>
 
       ${canEdit ? renderProductModalHtml() : ''}
     `;
 
-    mountDataTable('#tblInventory');
+    const dt = mountDataTable('#tblInventory');
+
+    if (dt && window.$ && $.fn.dataTable) {
+      $('#tblInventory').on('draw.dt', () => {
+        syncInventorySelectionChecks();
+      });
+    }
+
+    syncInventorySelectionChecks();
 
     if (canEdit) {
       productModal = new bootstrap.Modal(document.getElementById('productModal'));
@@ -1022,6 +1163,8 @@ export async function renderInventory(outlet) {
 
   const renderCategoriesTable = () => {
     const content = outlet.querySelector('#invContent');
+
+    clearCategoryObjectUrls();
 
     content.innerHTML = `
       <div class="card p-3">
@@ -1057,7 +1200,17 @@ export async function renderInventory(outlet) {
                     <td>${safe(desc)}</td>
                     <td>
                       ${imgUrl
-                        ? `<img src="${safe(imgUrl)}" alt="Imagen" style="width:42px;height:42px;object-fit:contain;border:1px solid #ddd;border-radius:6px;background:#fff;">`
+                        ? `
+                          <div style="width:70px;height:50px;display:flex;align-items:center;justify-content:center;">
+                            <span class="badge text-bg-secondary cat-img-loading">Cargando</span>
+                            <img
+                              data-cat-image-url="${safe(imgUrl)}"
+                              alt="Imagen"
+                              class="d-none"
+                              style="width:60px;height:46px;object-fit:contain;border:1px solid #ddd;border-radius:6px;background:#fff;"
+                            >
+                          </div>
+                        `
                         : '<span class="badge text-bg-secondary">Sin imagen</span>'
                       }
                     </td>
@@ -1084,6 +1237,7 @@ export async function renderInventory(outlet) {
     `;
 
     mountDataTable('#tblCategories');
+    loadCategoryThumbnails();
   };
 
   function updateBulkMicaPreview() {
@@ -1728,11 +1882,22 @@ export async function renderInventory(outlet) {
 
         <div class="mt-3">
           <label class="form-label">Imagen de la categoría</label>
+
           <div class="d-flex align-items-center gap-3 flex-wrap">
-            ${currentImageUrl
-              ? `<img src="${safe(currentImageUrl)}" alt="Imagen categoría" style="width:72px;height:72px;object-fit:contain;border:1px solid #ddd;border-radius:8px;background:#fff;">`
-              : '<div class="small text-muted border rounded p-2">Sin imagen actual</div>'
-            }
+            <div style="width:84px;height:84px;display:flex;align-items:center;justify-content:center;border:1px solid #ddd;border-radius:8px;background:#fff;">
+              ${currentImageUrl
+                ? `
+                  <span id="swCatImageLoading" class="small text-muted">Cargando</span>
+                  <img
+                    id="swCatCurrentImage"
+                    class="d-none"
+                    alt="Imagen categoría"
+                    style="width:78px;height:78px;object-fit:contain;"
+                  >
+                `
+                : '<span class="small text-muted">Sin imagen</span>'
+              }
+            </div>
 
             <div class="flex-grow-1">
               <input id="swCatImage" type="file" accept="image/*" class="form-control">
@@ -1758,6 +1923,16 @@ export async function renderInventory(outlet) {
     focusConfirm: false,
     showCancelButton: true,
     confirmButtonText: 'Guardar',
+    didOpen: async () => {
+      if (!currentImageUrl) return;
+
+      const img = document.getElementById('swCatCurrentImage');
+      const loading = document.getElementById('swCatImageLoading');
+
+      await loadProtectedImageInto(img, currentImageUrl);
+
+      if (loading) loading.remove();
+    },
     preConfirm: () => {
       const code = document.getElementById('swCatCode')?.value?.trim() || '';
       const name = document.getElementById('swCatName')?.value?.trim() || '';
@@ -1938,6 +2113,77 @@ export async function renderInventory(outlet) {
     }
   };
 
+  const bulkDeleteProducts = async () => {
+    if (!canEdit) return;
+
+    const ids = Array.from(selectedProductIds)
+      .map(id => Number(id))
+      .filter(id => Number.isInteger(id) && id > 0);
+
+    if (!ids.length) {
+      Swal.fire('Sin selección', 'Selecciona al menos un producto.', 'info');
+      return;
+    }
+
+    const selected = selectedProductsSummary();
+
+    const preview = selected
+      .slice(0, 12)
+      .map(p => `<li><b>${safe(p.name || `Producto #${p.id}`)}</b>${p.sku ? ` <span class="text-muted">(${safe(p.sku)})</span>` : ''}</li>`)
+      .join('');
+
+    const more = selected.length > 12
+      ? `<div class="small text-muted mt-2">Y ${selected.length - 12} producto(s) más...</div>`
+      : '';
+
+    const r = await Swal.fire({
+      title: `¿Borrar ${ids.length} producto(s)?`,
+      html: `
+        <div class="text-start">
+          <p>Esta acción enviará los productos seleccionados al borrado lógico.</p>
+          <ul class="mb-0">
+            ${preview}
+          </ul>
+          ${more}
+          <div class="alert alert-warning mt-3 mb-0">
+            Si algún producto tiene stock reservado, el backend puede omitirlo.
+          </div>
+        </div>
+      `,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, borrar seleccionados',
+      cancelButtonText: 'Cancelar'
+    });
+
+    if (!r.isConfirmed) return;
+
+    try {
+      const res = await api.delete('/products/bulk-delete', {
+        data: { ids }
+      });
+
+      const data = res?.data ?? res ?? {};
+      const deletedCount = Number(data.deleted_count ?? 0);
+      const skippedCount = Number(data.skipped_count ?? 0);
+
+      selectedProductIds.clear();
+
+      let msg = `Productos borrados: ${deletedCount}.`;
+
+      if (skippedCount > 0) {
+        msg += `<br>Productos omitidos: ${skippedCount}.`;
+      }
+
+      Swal.fire('Listo', msg, skippedCount > 0 ? 'warning' : 'success');
+
+      await refresh('inventory');
+    } catch (e) {
+      console.error(e);
+      Swal.fire('Error', extractAxiosErrorMessage(e), 'error');
+    }
+  };
+
   const loadData = async () => {
     try {
       const [cats, lt, mats, sups, bxs, trts] = await Promise.all([
@@ -2014,7 +2260,25 @@ export async function renderInventory(outlet) {
     cleanup();
     view = nextView;
     outlet.dataset.invView = view;
+
+    if (view !== 'inventory') {
+      selectedProductIds.clear();
+    }
+
     await loadData();
+
+    if (view === 'inventory') {
+      const validIds = new Set(
+        inventoryRows
+          .map(r => String(r.product?.id ?? ''))
+          .filter(Boolean)
+      );
+
+      selectedProductIds = new Set(
+        Array.from(selectedProductIds).filter(id => validIds.has(String(id)))
+      );
+    }
+
     await draw();
   };
 
@@ -2022,6 +2286,61 @@ export async function renderInventory(outlet) {
     const t = e.target;
 
     if (view === 'inventory') {
+      if (t?.dataset?.bulkDelete) {
+        await bulkDeleteProducts();
+        return;
+      }
+
+      if (t?.dataset?.clearSelection) {
+        selectedProductIds.clear();
+        syncInventorySelectionChecks();
+
+        const clearBtn = outlet.querySelector('#btnClearSelection');
+        if (clearBtn) clearBtn.disabled = true;
+
+        return;
+      }
+
+      if (t?.id === 'chkInvAll') {
+        const checked = Boolean(t.checked);
+
+        outlet.querySelectorAll('[data-product-check]').forEach(chk => {
+          const id = String(chk.dataset.productCheck || '');
+
+          chk.checked = checked;
+
+          if (checked) {
+            selectedProductIds.add(id);
+          } else {
+            selectedProductIds.delete(id);
+          }
+        });
+
+        syncInventorySelectionChecks();
+
+        const clearBtn = outlet.querySelector('#btnClearSelection');
+        if (clearBtn) clearBtn.disabled = selectedProductIds.size === 0;
+
+        return;
+      }
+
+      if (t?.dataset?.productCheck) {
+        const id = String(t.dataset.productCheck || '');
+
+        if (t.checked) {
+          selectedProductIds.add(id);
+        } else {
+          selectedProductIds.delete(id);
+        }
+
+        syncInventorySelectionChecks();
+
+        const clearBtn = outlet.querySelector('#btnClearSelection');
+        if (clearBtn) clearBtn.disabled = selectedProductIds.size === 0;
+
+        return;
+      }
+
       const addStockId = t?.dataset?.addstock;
       const editId = t?.dataset?.edit;
       const delId = t?.dataset?.del;
@@ -2056,6 +2375,7 @@ export async function renderInventory(outlet) {
         await openEditCategory(catEditId);
         return;
       }
+
       if (catDelId) {
         await deleteCategory(catDelId);
         return;

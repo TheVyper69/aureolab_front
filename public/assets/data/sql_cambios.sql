@@ -163,7 +163,7 @@ CREATE TABLE order_item_custom_bisel (
         ON DELETE SET NULL
 );
 
---se realizo en lap tice
+
 
 ALTER TABLE categories
 ADD COLUMN is_mica TINYINT(1) NOT NULL DEFAULT 0 AFTER description,
@@ -230,3 +230,9 @@ SELECT
     image_path
 FROM categories
 ORDER BY name;
+
+-- se realizo en lap wll
+ALTER TABLE categories
+ADD COLUMN IF NOT EXISTS image_blob LONGBLOB NULL AFTER image_mime;
+
+DESCRIBE categories;
