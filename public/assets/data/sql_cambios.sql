@@ -236,3 +236,90 @@ ALTER TABLE categories
 ADD COLUMN IF NOT EXISTS image_blob LONGBLOB NULL AFTER image_mime;
 
 DESCRIBE categories;
+
+
+
+
+
+
+-- SET FOREIGN_KEY_CHECKS = 0;
+
+-- -- Órdenes y sus detalles
+-- DELETE FROM order_item_custom_bisel;
+-- DELETE FROM order_item_treatments;
+-- DELETE FROM order_status_logs;
+-- DELETE FROM order_items;
+-- DELETE FROM orders;
+
+-- -- Ventas
+-- DELETE FROM sale_items;
+-- DELETE FROM sales;
+
+-- -- Inventario y productos
+-- DELETE FROM inventory_movements;
+-- DELETE FROM inventory_variants;
+-- DELETE FROM inventory;
+-- DELETE FROM product_treatments;
+-- DELETE FROM product_variants;
+-- DELETE FROM products;
+
+-- -- Relaciones de ópticas con métodos de pago
+-- DELETE FROM optica_payment_methods;
+
+-- -- Ópticas y clientes
+-- DELETE FROM opticas;
+-- DELETE FROM customers;
+
+-- -- Catálogos
+-- DELETE FROM boxes;
+-- DELETE FROM categories;
+-- DELETE FROM lens_materials;
+-- DELETE FROM lens_treatments;
+-- DELETE FROM lens_types;
+-- DELETE FROM materials;
+-- DELETE FROM suppliers;
+-- DELETE FROM treatments;
+
+-- -- Tokens y sesiones
+-- DELETE FROM personal_access_tokens;
+
+-- -- Conservar únicamente al administrador
+-- DELETE FROM users
+-- WHERE id <> 1;
+
+-- -- Reiniciar contadores AUTO_INCREMENT
+-- ALTER TABLE order_item_custom_bisel AUTO_INCREMENT = 1;
+-- ALTER TABLE order_item_treatments AUTO_INCREMENT = 1;
+-- ALTER TABLE order_status_logs AUTO_INCREMENT = 1;
+-- ALTER TABLE order_items AUTO_INCREMENT = 1;
+-- ALTER TABLE orders AUTO_INCREMENT = 1;
+
+-- ALTER TABLE sale_items AUTO_INCREMENT = 1;
+-- ALTER TABLE sales AUTO_INCREMENT = 1;
+
+-- ALTER TABLE inventory_movements AUTO_INCREMENT = 1;
+-- ALTER TABLE inventory_variants AUTO_INCREMENT = 1;
+-- ALTER TABLE inventory AUTO_INCREMENT = 1;
+-- ALTER TABLE product_treatments AUTO_INCREMENT = 1;
+-- ALTER TABLE product_variants AUTO_INCREMENT = 1;
+-- ALTER TABLE products AUTO_INCREMENT = 1;
+
+-- ALTER TABLE optica_payment_methods AUTO_INCREMENT = 1;
+-- ALTER TABLE opticas AUTO_INCREMENT = 1;
+-- ALTER TABLE customers AUTO_INCREMENT = 1;
+
+-- ALTER TABLE boxes AUTO_INCREMENT = 1;
+-- ALTER TABLE categories AUTO_INCREMENT = 1;
+-- ALTER TABLE lens_materials AUTO_INCREMENT = 1;
+-- ALTER TABLE lens_treatments AUTO_INCREMENT = 1;
+-- ALTER TABLE lens_types AUTO_INCREMENT = 1;
+-- ALTER TABLE materials AUTO_INCREMENT = 1;
+-- ALTER TABLE suppliers AUTO_INCREMENT = 1;
+-- ALTER TABLE treatments AUTO_INCREMENT = 1;
+
+-- ALTER TABLE personal_access_tokens AUTO_INCREMENT = 1;
+
+-- -- Mantener el siguiente usuario después del administrador en ID 2
+-- ALTER TABLE users AUTO_INCREMENT = 2;
+
+-- SET FOREIGN_KEY_CHECKS = 1;
