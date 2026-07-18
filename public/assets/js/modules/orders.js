@@ -26,29 +26,51 @@ const PAYMENT_BADGE = {
 };
 
 const PROCESS_LABEL = {
-  en_proceso: 'En proceso',
-  en_preparacion: 'En preparación',
+  recibido: 'Recibido',
+  surtido: 'Surtido',
+  en_corte: 'En corte',
   listo_para_entregar: 'Listo para entregar',
   entregado: 'Entregado',
-  revision: 'Revisión',
-  cancelado: 'Cancelado'
+  revision: 'En revisión',
+  cancelado: 'Cancelado',
+
+  // Compatibilidad con pedidos viejos
+  en_proceso: 'Recibido',
+  en_preparacion: 'En corte'
 };
 
 const PROCESS_BADGE = {
-  en_proceso: 'text-bg-info',
-  en_preparacion: 'text-bg-secondary',
+  recibido: 'text-bg-info',
+  surtido: 'text-bg-secondary',
+  en_corte: 'text-bg-warning',
   listo_para_entregar: 'text-bg-primary',
   entregado: 'text-bg-success',
   revision: 'text-bg-danger',
-  cancelado: 'text-bg-dark'
+  cancelado: 'text-bg-dark',
+
+  // Compatibilidad con pedidos viejos
+  en_proceso: 'text-bg-info',
+  en_preparacion: 'text-bg-warning'
 };
 
 const PROCESS_FLOW = [
-  'en_proceso',
-  'en_preparacion',
+  'recibido',
+  'surtido',
+  'en_corte',
   'listo_para_entregar',
   'entregado'
 ];
+
+function normalizeProcessStatusValue(value) {
+  const v = String(value || '').trim();
+
+  const map = {
+    en_proceso: 'recibido',
+    en_preparacion: 'en_corte'
+  };
+
+  return map[v] || v || 'recibido';
+}
 
 function safe(v) {
   return String(v ?? '')
@@ -117,7 +139,7 @@ function normalizeOrder(o) {
   if (!o) return o;
 
   const paymentStatus = o.paymentStatus ?? o.payment_status ?? 'pendiente';
-  const processStatus = o.processStatus ?? o.process_status ?? 'en_proceso';
+  const processStatus = normalizeProcessStatusValue(o.processStatus ?? o.process_status ?? 'recibido');
 
   const date = o.date ?? o.created_at ?? o.createdAt ?? null;
   const paidAt = o.paidAt ?? o.paid_at ?? null;
@@ -181,7 +203,7 @@ function badgeHtml(type, value) {
     return `<span class="badge ${PAYMENT_BADGE[v] || 'text-bg-secondary'}">${safe(PAYMENT_LABEL[v] || v)}</span>`;
   }
 
-  const v = value || 'en_proceso';
+  const v = normalizeProcessStatusValue(value || 'recibido');
   return `<span class="badge ${PROCESS_BADGE[v] || 'text-bg-secondary'}">${safe(PROCESS_LABEL[v] || v)}</span>`;
 }
 
@@ -258,22 +280,29 @@ async function fetchOrdersAll() {
 }
 
 function getAllowedProcessOptions(role, currentStatus) {
-  const current = String(currentStatus || 'en_proceso');
+  const current = normalizeProcessStatusValue(currentStatus || 'recibido');
 
   if (current === 'cancelado') return ['cancelado'];
 
   if (role === 'employee') {
     if (current === 'revision') return ['revision'];
+
     const idx = PROCESS_FLOW.indexOf(current);
-    if (idx === -1) return ['en_proceso'];
+
+    if (idx === -1) return ['recibido'];
+
     return PROCESS_FLOW.slice(idx);
   }
 
   if (role === 'admin') {
     if (current === 'revision') return ['revision'];
+
     if (current === 'entregado') return ['entregado', 'revision'];
+
     const idx = PROCESS_FLOW.indexOf(current);
-    if (idx === -1) return ['en_proceso'];
+
+    if (idx === -1) return ['recibido'];
+
     return PROCESS_FLOW.slice(idx);
   }
 
@@ -281,15 +310,15 @@ function getAllowedProcessOptions(role, currentStatus) {
 }
 
 function canOpticaCancel(procSt) {
-  return procSt === 'en_proceso';
+  return normalizeProcessStatusValue(procSt) === 'recibido';
 }
 
 function canAdminCancel(procSt) {
-  return procSt === 'revision';
+  return normalizeProcessStatusValue(procSt) === 'revision';
 }
 
 function canAdminSendToRevision(procSt) {
-  return procSt === 'entregado';
+  return normalizeProcessStatusValue(procSt) === 'entregado';
 }
 
 function modalTableWrap(innerHtml) {
@@ -920,7 +949,7 @@ async function showOrderDetail(order, productsMap, opticasById, ctx) {
                 </button>
               </div>
             `
-            : `<div class="small text-muted">La óptica solo puede cancelar cuando el pedido está en <b>En proceso</b>.</div>`
+            : `<div class="small text-muted">La óptica solo puede cancelar cuando el pedido está en <b>Recibido</b>.</div>`
         }
       </div>
     `
@@ -1135,7 +1164,7 @@ async function showOrderDetail(order, productsMap, opticasById, ctx) {
       if (opticaCancelBtn) {
         opticaCancelBtn.addEventListener('click', async () => {
           if (!canOpticaCancel(procSt)) {
-            Swal.fire('No permitido', 'La óptica solo puede cancelar cuando el pedido está en En proceso.', 'warning');
+            Swal.fire('No permitido', 'La óptica solo puede cancelar cuando el pedido está en Recibido.', 'warning');
             return;
           }
 

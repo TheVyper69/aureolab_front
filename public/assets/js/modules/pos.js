@@ -670,7 +670,7 @@ export async function renderPOS(outlet) {
 
       <div class="mt-3 d-flex flex-wrap gap-2">
         <button type="button" class="btn btn-outline-brand" id="btnCustomBisel">
-          Ordenar biselado personalizado
+          Ordenar biselado maquilado
         </button>
       </div>
 
