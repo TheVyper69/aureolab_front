@@ -69,11 +69,41 @@ function categorySalePrice(c) {
   return Number(c?.sale_price ?? c?.salePrice ?? 0);
 }
 function categoryImageUrl(c) {
-  return c?.imageUrl ?? c?.image_url ?? null;
+  const direct =
+    c?.imageUrl ??
+    c?.image_url ??
+    c?.image ??
+    null;
+
+  if (direct) return direct;
+
+  const id = c?.id ?? c?.category_id ?? null;
+
+  const hasImage = Boolean(
+    c?.has_image ??
+    c?.hasImage ??
+    c?.image_path ??
+    c?.image_filename ??
+    c?.image_blob
+  );
+
+  if (id && hasImage) {
+    return `/api/categories/${id}/image`;
+  }
+
+  return null;
 }
 
 function categoryHasImage(c) {
-  return Boolean(c?.has_image ?? c?.image_path ?? categoryImageUrl(c));
+  return Boolean(
+    c?.has_image ??
+    c?.hasImage ??
+    c?.imageUrl ??
+    c?.image_url ??
+    c?.image_path ??
+    c?.image_filename ??
+    c?.image_blob
+  );
 }
 
 function buildCategoryFormData(values = {}) {
@@ -462,6 +492,12 @@ export async function renderInventory(outlet) {
   let categoryObjectUrls = [];
   let selectedProductIds = new Set();
 
+  let catalogsLoaded = false;
+  let categoriesLoaded = false;
+  let inventoryLoaded = false;
+
+  let categoryImageObserver = null;
+
   function updateBulkDeleteButton() {
     const btn = outlet.querySelector('#btnBulkDeleteProducts');
 
@@ -507,6 +543,11 @@ export async function renderInventory(outlet) {
   }
 
   function clearCategoryObjectUrls() {
+    if (categoryImageObserver) {
+      categoryImageObserver.disconnect();
+      categoryImageObserver = null;
+    }
+
     categoryObjectUrls.forEach(url => {
       try {
         URL.revokeObjectURL(url);
@@ -517,48 +558,72 @@ export async function renderInventory(outlet) {
   }
 
   async function loadProtectedImageInto(imgEl, url) {
-    if (!imgEl || !url) return;
+  if (!imgEl || !url) return;
 
-    try {
-      const token = authService.getToken();
+  try {
+    const token = authService.getToken();
 
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: {
-          Accept: 'image/*',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
-      });
-
-      if (!res.ok || res.status === 204) {
-        return;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Accept: 'image/*',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
       }
+    });
 
-      const blob = await res.blob();
-
-      if (!blob || blob.size === 0) {
-        return;
-      }
-
-      const objectUrl = URL.createObjectURL(blob);
-      categoryObjectUrls.push(objectUrl);
-
-      imgEl.src = objectUrl;
-      imgEl.classList.remove('d-none');
-
+    if (!res.ok || res.status === 204) {
       const badge = imgEl.parentElement?.querySelector('.cat-img-loading');
-      if (badge) badge.remove();
-    } catch (err) {
-      console.warn('No se pudo cargar imagen protegida:', err);
+      if (badge) {
+        badge.textContent = 'Sin imagen';
+        badge.classList.remove('text-bg-secondary');
+        badge.classList.add('text-bg-light', 'text-dark');
+      }
+      return;
+    }
+
+    const blob = await res.blob();
+
+    if (!blob || blob.size === 0) {
+      const badge = imgEl.parentElement?.querySelector('.cat-img-loading');
+      if (badge) {
+        badge.textContent = 'Sin imagen';
+        badge.classList.remove('text-bg-secondary');
+        badge.classList.add('text-bg-light', 'text-dark');
+      }
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(blob);
+    categoryObjectUrls.push(objectUrl);
+
+    imgEl.src = objectUrl;
+    imgEl.classList.remove('d-none');
+
+    const badge = imgEl.parentElement?.querySelector('.cat-img-loading');
+    if (badge) badge.remove();
+  } catch (err) {
+    console.warn('No se pudo cargar imagen protegida:', err);
+
+    const badge = imgEl.parentElement?.querySelector('.cat-img-loading');
+    if (badge) {
+      badge.textContent = 'Error';
+      badge.classList.remove('text-bg-secondary');
+      badge.classList.add('text-bg-danger');
     }
   }
+}
 
-  async function loadCategoryThumbnails() {
-    const imgs = Array.from(document.querySelectorAll('[data-cat-image-url]'));
+  function loadCategoryThumbnails() {
+    const imgs = Array.from(outlet.querySelectorAll('[data-cat-image-url]'));
 
-    await Promise.all(
-      imgs.map(img => loadProtectedImageInto(img, img.dataset.catImageUrl))
-    );
+    if (!imgs.length) return;
+
+    imgs.forEach(img => {
+      if (img.dataset.loaded === '1') return;
+
+      img.dataset.loaded = '1';
+      loadProtectedImageInto(img, img.dataset.catImageUrl);
+    });
   }
 
   async function loadProtectedPreview(productId) {
@@ -1236,8 +1301,17 @@ export async function renderInventory(outlet) {
       </div>
     `;
 
-    mountDataTable('#tblCategories');
+    const dt = mountDataTable('#tblCategories');
+
     loadCategoryThumbnails();
+
+    if (dt && window.$ && $.fn.dataTable) {
+      $('#tblCategories').on('draw.dt', () => {
+        setTimeout(() => {
+          loadCategoryThumbnails();
+        }, 0);
+      });
+    }
   };
 
   function updateBulkMicaPreview() {
@@ -1729,7 +1803,9 @@ export async function renderInventory(outlet) {
 
         productModal.hide();
         Swal.fire('Guardado', 'Producto guardado.', 'success');
-        await refresh('inventory');
+
+        inventoryLoaded = false;
+        await refresh('inventory', true);
       } catch (err) {
         console.error(err);
         Swal.fire('Error', extractAxiosErrorMessage(err), 'error');
@@ -1829,7 +1905,10 @@ export async function renderInventory(outlet) {
     await api.post('/categories', formData);
 
     Swal.fire('Listo', 'Categoría creada.', 'success');
-    await refresh('categories');
+
+    categoriesLoaded = false;
+    inventoryLoaded = false;
+    await refresh('categories', true);
   } catch (e) {
     console.error(e);
     Swal.fire('Error', extractAxiosErrorMessage(e), 'error');
@@ -2030,7 +2109,9 @@ export async function renderInventory(outlet) {
       'success'
     );
 
-    await refresh('categories');
+    categoriesLoaded = false;
+    inventoryLoaded = false;
+    await refresh('categories', true);
   } catch (e) {
     console.error(e);
     Swal.fire('Error', extractAxiosErrorMessage(e), 'error');
@@ -2053,7 +2134,10 @@ export async function renderInventory(outlet) {
     try {
       await inventoryService.deleteCategory(catId);
       Swal.fire('Listo', 'Categoría eliminada.', 'success');
-      await refresh('categories');
+
+      categoriesLoaded = false;
+      inventoryLoaded = false;
+      await refresh('categories', true);
     } catch (e) {
       console.error(e);
       Swal.fire('Error', extractAxiosErrorMessage(e), 'error');
@@ -2083,7 +2167,9 @@ export async function renderInventory(outlet) {
     try {
       await inventoryService.addStock(productId, { qty: Number(r.value), note: 'Entrada desde inventario' });
       Swal.fire('Listo', 'Stock actualizado.', 'success');
-      await refresh('inventory');
+
+      inventoryLoaded = false;
+      await refresh('inventory', true);
     } catch (e) {
       console.error(e);
       Swal.fire('Error', extractAxiosErrorMessage(e), 'error');
@@ -2106,7 +2192,9 @@ export async function renderInventory(outlet) {
     try {
       await inventoryService.deleteProduct(productId);
       Swal.fire('Listo', 'Producto eliminado.', 'success');
-      await refresh('inventory');
+
+      inventoryLoaded = false;
+      await refresh('inventory', true);
     } catch (e) {
       console.error(e);
       Swal.fire('Error', extractAxiosErrorMessage(e), 'error');
@@ -2177,53 +2265,97 @@ export async function renderInventory(outlet) {
 
       Swal.fire('Listo', msg, skippedCount > 0 ? 'warning' : 'success');
 
-      await refresh('inventory');
+      inventoryLoaded = false;
+      await refresh('inventory', true);
     } catch (e) {
       console.error(e);
       Swal.fire('Error', extractAxiosErrorMessage(e), 'error');
     }
   };
 
-  const loadData = async () => {
+  const loadData = async (force = false) => {
     try {
-      const [cats, lt, mats, sups, bxs, trts] = await Promise.all([
-        inventoryService.listCategories(),
-        api.get('/lens-types'),
-        api.get('/materials'),
-        api.get('/suppliers'),
-        api.get('/boxes'),
-        api.get('/treatments'),
-      ]);
+      /*
+      |--------------------------------------------------------------------------
+      | Categorías
+      |--------------------------------------------------------------------------
+      | Se necesitan tanto en Inventario como en Categorías, pero no hay que
+      | pedirlas cada vez que cambias de pestaña.
+      */
+      if (force || !categoriesLoaded) {
+        const cats = await inventoryService.listCategories();
 
-      categories = Array.isArray(cats) ? cats : [];
-      window.__inventoryCategories = categories;
-      lensTypes = Array.isArray(lt?.data) ? lt.data : (Array.isArray(lt) ? lt : []);
-      materials = Array.isArray(mats?.data) ? mats.data : (Array.isArray(mats) ? mats : []);
-      suppliers = Array.isArray(sups?.data) ? sups.data : (Array.isArray(sups) ? sups : []);
-      boxes = Array.isArray(bxs?.data) ? bxs.data : (Array.isArray(bxs) ? bxs : []);
-      treatmentsCatalog = Array.isArray(trts?.data) ? trts.data : (Array.isArray(trts) ? trts : []);
+        categories = Array.isArray(cats) ? cats : [];
+        window.__inventoryCategories = categories;
+
+        categoriesLoaded = true;
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Catálogos del modal de producto
+      |--------------------------------------------------------------------------
+      | Solo se cargan una vez y se reutilizan. Esto evita pedir lens-types,
+      | materials, suppliers, boxes y treatments cada vez que cambias de vista.
+      */
+      if (force || !catalogsLoaded) {
+        const [lt, mats, sups, bxs, trts] = await Promise.all([
+          api.get('/lens-types'),
+          api.get('/materials'),
+          api.get('/suppliers'),
+          api.get('/boxes'),
+          api.get('/treatments'),
+        ]);
+
+        lensTypes = Array.isArray(lt?.data) ? lt.data : (Array.isArray(lt) ? lt : []);
+        materials = Array.isArray(mats?.data) ? mats.data : (Array.isArray(mats) ? mats : []);
+        suppliers = Array.isArray(sups?.data) ? sups.data : (Array.isArray(sups) ? sups : []);
+        boxes = Array.isArray(bxs?.data) ? bxs.data : (Array.isArray(bxs) ? bxs : []);
+        treatmentsCatalog = Array.isArray(trts?.data) ? trts.data : (Array.isArray(trts) ? trts : []);
+
+        catalogsLoaded = true;
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Inventario
+      |--------------------------------------------------------------------------
+      | Solo se carga si estás en vista Inventario. Al entrar a Categorías ya no
+      | se pide /inventory.
+      */
+      if (view === 'inventory' && (force || !inventoryLoaded)) {
+        const raw = await inventoryService.list();
+        inventoryRows = normalizeInventoryRows(raw);
+
+        const map = new Map((categories || []).map(c => [String(c.id), pickCategoryName(c)]));
+
+        inventoryRows = inventoryRows.map(r => {
+          const p = r.product || {};
+
+          if (!p.categoryLabel && p.categoryId && map.has(String(p.categoryId))) {
+            p.categoryLabel = map.get(String(p.categoryId));
+          }
+
+          return r;
+        });
+
+        inventoryLoaded = true;
+      }
     } catch (e) {
-      console.warn('No se pudieron cargar catálogos:', e);
-      categories = [];
-      lensTypes = [];
-      materials = [];
-      suppliers = [];
-      boxes = [];
-      treatmentsCatalog = [];
-    }
+      console.warn('No se pudieron cargar datos de inventario:', e);
 
-    if (view === 'inventory') {
-      const raw = await inventoryService.list();
-      inventoryRows = normalizeInventoryRows(raw);
+      if (!categoriesLoaded) categories = [];
+      if (!catalogsLoaded) {
+        lensTypes = [];
+        materials = [];
+        suppliers = [];
+        boxes = [];
+        treatmentsCatalog = [];
+      }
 
-      const map = new Map((categories || []).map(c => [String(c.id), pickCategoryName(c)]));
-      inventoryRows = inventoryRows.map(r => {
-        const p = r.product || {};
-        if (!p.categoryLabel && p.categoryId && map.has(String(p.categoryId))) {
-          p.categoryLabel = map.get(String(p.categoryId));
-        }
-        return r;
-      });
+      if (view === 'inventory' && !inventoryLoaded) {
+        inventoryRows = [];
+      }
     }
   };
 
@@ -2231,10 +2363,27 @@ export async function renderInventory(outlet) {
     renderShell();
     if (canEdit) renderTopActions();
 
-    outlet.querySelector('#tabInventory')?.addEventListener('click', async () => { await refresh('inventory'); });
-    outlet.querySelector('#tabCategories')?.addEventListener('click', async () => { await refresh('categories'); });
+    outlet.querySelector('#tabInventory')?.addEventListener('click', async () => {
+      if (view === 'inventory') return;
+      await refresh('inventory');
+    });
 
-    outlet.querySelector('#btnRefresh')?.addEventListener('click', async () => { await refresh(view); });
+    outlet.querySelector('#tabCategories')?.addEventListener('click', async () => {
+      if (view === 'categories') return;
+      await refresh('categories');
+    });
+
+    outlet.querySelector('#btnRefresh')?.addEventListener('click', async () => {
+      if (view === 'inventory') {
+        inventoryLoaded = false;
+      }
+
+      if (view === 'categories') {
+        categoriesLoaded = false;
+      }
+
+      await refresh(view, true);
+    });
 
     outlet.querySelector('#btnNewProduct')?.addEventListener('click', async () => {
       if (!categories.length) {
@@ -2244,20 +2393,22 @@ export async function renderInventory(outlet) {
       await openProductModal(null);
     });
 
-    outlet.querySelector('#btnNewCategory')?.addEventListener('click', async () => { await openCreateCategory(); });
+    outlet.querySelector('#btnNewCategory')?.addEventListener('click', async () => {
+      await openCreateCategory();
+    });
 
     if (view === 'inventory') renderInventoryTable();
     else renderCategoriesTable();
 
     outlet.addEventListener('click', onOutletClick);
   };
-
   const cleanup = () => {
     outlet.removeEventListener('click', onOutletClick);
   };
 
-  const refresh = async (nextView) => {
+  const refresh = async (nextView, force = false) => {
     cleanup();
+
     view = nextView;
     outlet.dataset.invView = view;
 
@@ -2265,7 +2416,7 @@ export async function renderInventory(outlet) {
       selectedProductIds.clear();
     }
 
-    await loadData();
+    await loadData(force);
 
     if (view === 'inventory') {
       const validIds = new Set(

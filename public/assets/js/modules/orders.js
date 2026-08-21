@@ -5,8 +5,8 @@ import { authService } from '../services/authService.js';
 
 const PM_ID_LABEL = {
   1: 'Efectivo',
-  2: 'Tarjeta',
-  3: 'Transferencia'
+  2: 'Transferencia',
+  3: 'Tarjeta'
 };
 
 const PM_CODE_LABEL = {
@@ -14,6 +14,12 @@ const PM_CODE_LABEL = {
   transfer: 'Transferencia',
   card: 'Tarjeta'
 };
+
+const PAYMENT_METHOD_OPTIONS = [
+  { id: 1, label: 'Efectivo' },
+  { id: 2, label: 'Transferencia' },
+  { id: 3, label: 'Tarjeta' }
+];
 
 const PAYMENT_LABEL = {
   pendiente: 'Pendiente',
@@ -145,11 +151,20 @@ function normalizeOrder(o) {
   const paidAt = o.paidAt ?? o.paid_at ?? null;
   const opticaId = o.opticaId ?? o.optica_id ?? null;
 
+  const paymentMethodId = Number(
+    o.paymentMethodId ??
+    o.payment_method_id ??
+    o.paymentMethod ??
+    o.payment_method ??
+    0
+  ) || null;
+
   const paymentMethod =
     o.paymentMethod ??
     o.payment_method ??
     o.payment_method_code ??
     o.payment_method_id ??
+    paymentMethodId ??
     null;
 
   const subtotal = Number(o.subtotal ?? o.sub_total ?? 0);
@@ -188,6 +203,7 @@ function normalizeOrder(o) {
     paidAt,
     opticaId,
     paymentMethod,
+    paymentMethodId,
     paymentStatus,
     processStatus,
     subtotal,
@@ -395,13 +411,21 @@ function renderCustomBiselHtml(customBisel) {
 }
 
 function getPaymentMethodLabel(o) {
-  if (typeof o.paymentMethod === 'number' || String(o.paymentMethod).match(/^\d+$/)) {
-    return PM_ID_LABEL[Number(o.paymentMethod)] || `ID ${o.paymentMethod}`;
+  const id = Number(
+    o.paymentMethodId ??
+    o.payment_method_id ??
+    o.paymentMethod ??
+    o.payment_method ??
+    0
+  );
+
+  if (id) {
+    return PM_ID_LABEL[id] || `ID ${id}`;
   }
 
-  const key = String(o.paymentMethod || '').toLowerCase();
+  const key = String(o.paymentMethod || o.payment_method || '').toLowerCase();
 
-  return PM_CODE_LABEL[key] || o.paymentMethod || '—';
+  return PM_CODE_LABEL[key] || o.paymentMethod || o.payment_method || '—';
 }
 
 function formatTicketDate(value) {
@@ -859,7 +883,7 @@ async function showOrderDetail(order, productsMap, opticasById, ctx) {
     `Óptica #${o.opticaId || '—'}`;
 
   const paySt = o.paymentStatus || 'pendiente';
-  const procSt = o.processStatus || 'en_proceso';
+  const procSt = o.processStatus || 'recibido';
 
   const canAdminEditPayment = role === 'admin';
   const canEditProcess = (role === 'admin' || role === 'employee');
@@ -936,6 +960,14 @@ async function showOrderDetail(order, productsMap, opticasById, ctx) {
 
   const pmLabel = getPaymentMethodLabel(o);
 
+  const currentPaymentMethodId = Number(
+    o.paymentMethodId ??
+    o.payment_method_id ??
+    o.paymentMethod ??
+    o.payment_method ??
+    0
+  ) || null;
+
   const opticaControlsHtml = role === 'optica'
     ? `
       <div class="mt-3 p-3 border rounded bg-light">
@@ -959,10 +991,27 @@ async function showOrderDetail(order, productsMap, opticasById, ctx) {
     ? ''
     : `
       <div class="mt-3 p-3 border rounded bg-light">
-        <div class="fw-semibold mb-2">Cambios de estatus</div>
+        <div class="fw-semibold mb-2">Cambios del pedido</div>
 
         <div class="row g-2">
-          <div class="col-md-6">
+          <div class="col-md-4">
+            <div class="small text-muted">Método de pago</div>
+            ${
+              role === 'admin'
+                ? `
+                  <select class="form-select form-select-sm" id="selPaymentMethod">
+                    ${PAYMENT_METHOD_OPTIONS.map(pm => `
+                      <option value="${pm.id}" ${Number(pm.id) === Number(currentPaymentMethodId) ? 'selected' : ''}>
+                        ${safe(pm.label)}
+                      </option>
+                    `).join('')}
+                  </select>
+                `
+                : `<div>${safe(pmLabel)} <span class="small text-muted ms-2">(solo admin)</span></div>`
+            }
+          </div>
+
+          <div class="col-md-4">
             <div class="small text-muted">Estatus de pago</div>
             ${
               canAdminEditPayment
@@ -977,7 +1026,7 @@ async function showOrderDetail(order, productsMap, opticasById, ctx) {
             }
           </div>
 
-          <div class="col-md-6">
+          <div class="col-md-4">
             <div class="small text-muted">Estatus de proceso</div>
             ${
               canEditProcess
@@ -1018,7 +1067,6 @@ async function showOrderDetail(order, productsMap, opticasById, ctx) {
         </div>
       </div>
     `;
-
   const paidAtHtml = o.paidAt
     ? `
       <div class="col-6">
@@ -1227,87 +1275,132 @@ async function showOrderDetail(order, productsMap, opticasById, ctx) {
       if (!btn) return;
 
       btn.addEventListener('click', async () => {
-        const selPay = htmlContainer?.querySelector('#selPaymentStatus');
-        const selProc = htmlContainer?.querySelector('#selProcessStatus');
+      const selPay = htmlContainer?.querySelector('#selPaymentStatus');
+      const selProc = htmlContainer?.querySelector('#selProcessStatus');
+      const selPaymentMethod = htmlContainer?.querySelector('#selPaymentMethod');
 
-        const nextPay = selPay ? selPay.value : paySt;
-        const nextProc = selProc ? selProc.value : procSt;
+      const nextPay = selPay ? selPay.value : paySt;
+      const nextProc = selProc ? selProc.value : procSt;
+      const nextPaymentMethodId = selPaymentMethod
+        ? Number(selPaymentMethod.value || 0)
+        : currentPaymentMethodId;
 
-        if (nextPay !== paySt && role !== 'admin') {
-          Swal.fire('No permitido', 'Solo admin puede cambiar el estatus de pago.', 'warning');
+      if (nextPaymentMethodId !== currentPaymentMethodId && role !== 'admin') {
+        Swal.fire('No permitido', 'Solo admin puede cambiar el método de pago.', 'warning');
+        return;
+      }
+
+      if (nextPay !== paySt && role !== 'admin') {
+        Swal.fire('No permitido', 'Solo admin puede cambiar el estatus de pago.', 'warning');
+        return;
+      }
+
+      if (nextProc !== procSt) {
+        if (!(role === 'admin' || role === 'employee')) {
+          Swal.fire('No permitido', 'Tu rol no puede cambiar el estatus de proceso.', 'warning');
           return;
         }
 
-        if (nextProc !== procSt) {
-          if (!(role === 'admin' || role === 'employee')) {
-            Swal.fire('No permitido', 'Tu rol no puede cambiar el estatus de proceso.', 'warning');
+        if (role === 'employee') {
+          if (nextProc === 'revision' || nextProc === 'cancelado') {
+            Swal.fire('No permitido', 'Empleado no puede mandar a revisión ni cancelar.', 'warning');
             return;
           }
 
-          if (role === 'employee') {
-            if (nextProc === 'revision' || nextProc === 'cancelado') {
-              Swal.fire('No permitido', 'Empleado no puede mandar a revisión ni cancelar.', 'warning');
-              return;
-            }
+          const allowedEmployee = getAllowedProcessOptions('employee', procSt);
 
-            const allowedEmployee = getAllowedProcessOptions('employee', procSt);
-            if (!allowedEmployee.includes(nextProc)) {
-              Swal.fire('No permitido', 'El empleado solo puede avanzar el pedido en el flujo permitido.', 'warning');
-              return;
-            }
-          }
-
-          if (role === 'admin') {
-            if (nextProc === 'revision' && !canAdminSendToRevision(procSt)) {
-              Swal.fire('No permitido', 'Admin solo puede mandar a revisión pedidos entregados.', 'warning');
-              return;
-            }
-
-            if (nextProc === 'cancelado') {
-              Swal.fire('No permitido', 'El estado cancelado no se cambia desde el selector. Usa el botón Cancelar pedido.', 'warning');
-              return;
-            }
-
-            const allowedAdmin = getAllowedProcessOptions('admin', procSt);
-            if (!allowedAdmin.includes(nextProc)) {
-              Swal.fire('No permitido', 'Ese cambio de estado no está permitido.', 'warning');
-              return;
-            }
+          if (!allowedEmployee.includes(nextProc)) {
+            Swal.fire('No permitido', 'El empleado solo puede avanzar el pedido en el flujo permitido.', 'warning');
+            return;
           }
         }
 
-        if (nextPay === paySt && nextProc === procSt) {
-          Swal.fire('Sin cambios', 'No hiciste modificaciones.', 'info');
-          return;
-        }
+        if (role === 'admin') {
+          if (nextProc === 'revision' && !canAdminSendToRevision(procSt)) {
+            Swal.fire('No permitido', 'Admin solo puede mandar a revisión pedidos entregados.', 'warning');
+            return;
+          }
 
-        const confirm = await Swal.fire({
-          title: 'Confirmar cambios',
-          html: `Pago: ${badgeHtml('payment', nextPay)}<br/>Proceso: ${badgeHtml('process', nextProc)}`,
-          icon: 'question',
-          showCancelButton: true,
-          confirmButtonText: 'Guardar'
+          if (nextProc === 'cancelado') {
+            Swal.fire('No permitido', 'El estado cancelado no se cambia desde el selector. Usa el botón Cancelar pedido.', 'warning');
+            return;
+          }
+
+          const allowedAdmin = getAllowedProcessOptions('admin', procSt);
+
+          if (!allowedAdmin.includes(nextProc)) {
+            Swal.fire('No permitido', 'Ese cambio de estado no está permitido.', 'warning');
+            return;
+          }
+        }
+      }
+
+      const changedPaymentMethod = Number(nextPaymentMethodId || 0) !== Number(currentPaymentMethodId || 0);
+      const changedPaymentStatus = nextPay !== paySt;
+      const changedProcessStatus = nextProc !== procSt;
+
+      if (!changedPaymentMethod && !changedPaymentStatus && !changedProcessStatus) {
+        Swal.fire('Sin cambios', 'No hiciste modificaciones.', 'info');
+        return;
+      }
+
+      const nextPaymentMethodLabel = PM_ID_LABEL[Number(nextPaymentMethodId)] || `ID ${nextPaymentMethodId}`;
+
+      const confirm = await Swal.fire({
+        title: 'Confirmar cambios',
+        html: `
+          Método de pago: <b>${safe(nextPaymentMethodLabel)}</b><br/>
+          Pago: ${badgeHtml('payment', nextPay)}<br/>
+          Proceso: ${badgeHtml('process', nextProc)}
+        `,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Guardar',
+        cancelButtonText: 'Cancelar'
+      });
+
+      if (!confirm.isConfirmed) return;
+
+      const patch = {};
+
+      if (changedPaymentMethod) patch.payment_method_id = nextPaymentMethodId;
+      if (changedPaymentStatus) patch.payment_status = nextPay;
+      if (changedProcessStatus) patch.process_status = nextProc;
+
+      try {
+        btn.disabled = true;
+        btn.textContent = 'Guardando...';
+
+        const res = await updateOrderPatch(o.id, patch);
+
+        const updated = normalizeOrder({
+          ...o,
+          ...patch,
+          ...(res?.data || res || {})
         });
 
-        if (!confirm.isConfirmed) return;
+        Swal.close();
 
-        const patch = {};
-        if (nextPay !== paySt) patch.payment_status = nextPay;
-        if (nextProc !== procSt) patch.process_status = nextProc;
-
-        try {
-          const res = await updateOrderPatch(o.id, patch);
-          const updated = normalizeOrder({ ...o, ...patch, ...(res?.data || res || {}) });
-
-          if (typeof ctx?.onReload === 'function') await ctx.onReload();
-          if (typeof ctx?.onLocalUpdate === 'function') ctx.onLocalUpdate(o.id, updated);
-
-          Swal.fire('Listo', 'Estatus actualizado.', 'success');
-        } catch (err) {
-          console.error(err);
-          Swal.fire('Error', err?.response?.data?.message || 'No se pudo actualizar el estatus.', 'error');
+        if (typeof ctx?.onReload === 'function') {
+          await ctx.onReload();
+        } else if (typeof ctx?.onLocalUpdate === 'function') {
+          ctx.onLocalUpdate(o.id, updated);
         }
-      });
+
+        await Swal.fire('Listo', 'Pedido actualizado.', 'success');
+      } catch (err) {
+        console.error(err);
+
+        btn.disabled = false;
+        btn.textContent = 'Guardar cambios';
+
+        Swal.fire(
+          'Error',
+          err?.response?.data?.message || 'No se pudo actualizar el pedido.',
+          'error'
+        );
+      }
+    });
     }
   });
 }
@@ -1329,6 +1422,11 @@ async function renderOpticaOrders(outlet) {
   let dt = null;
 
   async function reloadTable() {
+    if (dt) {
+      dt.destroy();
+      dt = null;
+    }
+
     const all = await fetchOrdersAll();
     rows = all.map(normalizeOrder);
 
@@ -1339,11 +1437,6 @@ async function renderOpticaOrders(outlet) {
     rows.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     renderMyOrdersTbody();
-
-    if (dt) {
-      dt.destroy();
-      dt = null;
-    }
 
     dt = initDataTable('#tblMyOrders');
   }
@@ -1359,15 +1452,9 @@ async function renderOpticaOrders(outlet) {
 
     tbody.innerHTML = rows.map(o => {
       const paySt = o.paymentStatus || 'pendiente';
-      const procSt = o.processStatus || 'en_proceso';
+      const procSt = o.processStatus || 'recibido';
 
-      let pmLabel = '—';
-      if (typeof o.paymentMethod === 'number' || String(o.paymentMethod).match(/^\d+$/)) {
-        pmLabel = PM_ID_LABEL[Number(o.paymentMethod)] || `ID ${o.paymentMethod}`;
-      } else {
-        const key = String(o.paymentMethod || '').toLowerCase();
-        pmLabel = PM_CODE_LABEL[key] || o.paymentMethod || '—';
-      }
+      const pmLabel = getPaymentMethodLabel(o);
 
       return `
         <tr>
@@ -1455,43 +1542,38 @@ async function renderEmployeeOrders(outlet) {
   let dt = null;
 
   async function reloadTable() {
-    const all = await fetchOrdersAll();
-    rows = all.map(normalizeOrder).sort((a, b) => new Date(b.date) - new Date(a.date));
-
-    renderTbody();
-
     if (dt) {
       dt.destroy();
       dt = null;
     }
 
+    const all = await fetchOrdersAll();
+    rows = all.map(normalizeOrder).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    renderTbody();
+
     dt = initDataTable('#tblAllOrders');
   }
 
   const onLocalUpdate = (orderId, updatedOrder) => {
+    if (dt) {
+      dt.destroy();
+      dt = null;
+    }
+
     const idx = rows.findIndex(x => String(x.id) === String(orderId));
+
     if (idx >= 0) {
       rows[idx] = normalizeOrder(updatedOrder);
     }
 
     renderTbody();
 
-    if (dt) {
-      dt.destroy();
-      dt = null;
-    }
-
     dt = initDataTable('#tblAllOrders');
   };
 
   function pmLabelFrom(o) {
-    if (typeof o.paymentMethod === 'number' || String(o.paymentMethod).match(/^\d+$/)) {
-      return PM_ID_LABEL[Number(o.paymentMethod)] || `ID ${o.paymentMethod}`;
-    }
-
-    const key = String(o.paymentMethod || '').toLowerCase();
-
-    return PM_CODE_LABEL[key] || o.paymentMethod || '—';
+    return getPaymentMethodLabel(o);
   }
 
   function renderTbody() {
@@ -1501,7 +1583,7 @@ async function renderEmployeeOrders(outlet) {
     tbody.innerHTML = rows.map(o => {
       const optName = opticasById.get(String(o.opticaId))?.nombre || `Óptica #${o.opticaId || '—'}`;
       const paySt = o.paymentStatus || 'pendiente';
-      const procSt = o.processStatus || 'en_proceso';
+      const procSt = o.processStatus || 'recibido';
 
       return `
         <tr>

@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Servidor: localhost
--- Tiempo de generación: 17-07-2026 a las 00:30:57
+-- Tiempo de generación: 19-08-2026 a las 23:47:31
 -- Versión del servidor: 10.4.28-MariaDB
 -- Versión de PHP: 8.2.4
 
@@ -640,7 +640,7 @@ CREATE TABLE `orders` (
   `payment_method_id` bigint(20) UNSIGNED NOT NULL,
   `payment_status` enum('pendiente','pagado') NOT NULL DEFAULT 'pendiente',
   `paid_at` datetime DEFAULT NULL,
-  `process_status` enum('en_preparacion','en_proceso','listo_para_entregar','entregado','revision','cancelado') NOT NULL DEFAULT 'en_preparacion',
+  `process_status` enum('recibido','surtido','en_corte','listo_para_entregar','entregado','revision','cancelado') NOT NULL DEFAULT 'recibido',
   `notes` text DEFAULT NULL,
   `subtotal` decimal(12,2) NOT NULL DEFAULT 0.00,
   `total` decimal(12,2) NOT NULL DEFAULT 0.00,
@@ -654,14 +654,14 @@ CREATE TABLE `orders` (
 --
 
 INSERT INTO `orders` (`id`, `optica_id`, `created_by_user_id`, `payment_method_id`, `payment_status`, `paid_at`, `process_status`, `notes`, `subtotal`, `total`, `created_at`, `updated_at`, `deleted_at`) VALUES
-(9, 1, 4, 3, 'pagado', '2026-04-20 12:59:10', 'en_proceso', NULL, 900.00, 900.00, '2026-03-02 17:27:22', '2026-04-20 18:59:10', NULL),
+(9, 1, 4, 3, 'pagado', '2026-04-20 12:59:10', 'recibido', NULL, 900.00, 900.00, '2026-03-02 17:27:22', '2026-04-20 18:59:10', NULL),
 (10, 1, 4, 2, 'pagado', '2026-03-14 13:27:24', 'listo_para_entregar', NULL, 280.00, 280.00, '2026-03-07 19:37:04', '2026-03-14 19:27:24', NULL),
 (11, 1, 4, 2, 'pagado', '2026-04-20 12:26:45', 'entregado', NULL, 620.00, 620.00, '2026-04-18 15:34:48', '2026-04-20 18:26:45', NULL),
-(12, 1, 4, 3, 'pendiente', NULL, 'en_proceso', NULL, 400.00, 400.00, '2026-04-18 15:45:12', '2026-04-18 15:45:12', NULL),
+(12, 1, 4, 3, 'pendiente', NULL, 'recibido', NULL, 400.00, 400.00, '2026-04-18 15:45:12', '2026-04-18 15:45:12', NULL),
 (13, 1, 4, 3, 'pagado', '2026-07-16 15:37:03', 'entregado', NULL, 0.00, 0.00, '2026-04-20 17:21:42', '2026-07-16 21:37:03', NULL),
 (14, 1, 4, 1, 'pagado', '2026-07-14 20:30:51', 'entregado', NULL, 300.00, 300.00, '2026-07-14 23:03:10', '2026-07-15 02:30:51', NULL),
 (15, 1, 4, 1, 'pagado', '2026-07-14 20:29:42', 'listo_para_entregar', NULL, 100.00, 100.00, '2026-07-15 02:28:44', '2026-07-15 02:29:42', NULL),
-(16, 1, 4, 3, 'pendiente', NULL, 'en_proceso', NULL, 60.00, 60.00, '2026-07-16 21:49:17', '2026-07-16 21:49:17', NULL);
+(16, 1, 4, 3, 'pagado', '2026-08-19 15:43:03', 'en_corte', NULL, 60.00, 60.00, '2026-07-16 21:49:17', '2026-08-19 21:43:03', NULL);
 
 -- --------------------------------------------------------
 
@@ -846,8 +846,9 @@ INSERT INTO `personal_access_tokens` (`id`, `tokenable_type`, `tokenable_id`, `n
 (24, 'App\\Models\\User', 1, 'api-token', 'dfc691945636f6d7e86516a7b1b8094406c010d77c17f61e6f36a85309f599f8', '[\"*\"]', '2026-05-12 17:22:54', NULL, '2026-04-20 18:48:17', '2026-05-12 17:22:54'),
 (25, 'App\\Models\\User', 1, 'api-token', 'e41b8112e3da57e73cfe7e79302601866c2ee3a6ce7e747aab31fa0613d9cbee', '[\"*\"]', '2026-07-13 19:43:50', NULL, '2026-07-13 16:43:18', '2026-07-13 19:43:50'),
 (26, 'App\\Models\\User', 1, 'api-token', '624e260a0a3220deacd1d685aa86b1bf598e2fbc7c025a401d4ebd417590afae', '[\"*\"]', '2026-07-14 18:38:43', NULL, '2026-07-14 18:37:46', '2026-07-14 18:38:43'),
-(28, 'App\\Models\\User', 1, 'api-token', 'd4dd58ec3e9388e6849d268ebf4fee7faa54a2fc65636caadb80d4a754dd60be', '[\"*\"]', '2026-07-16 21:59:23', NULL, '2026-07-14 21:40:48', '2026-07-16 21:59:23'),
-(29, 'App\\Models\\User', 4, 'api-token', '32cc93b74602c63d3723b3fc54d04d18acff825f3962d969480362e91b10636c', '[\"*\"]', '2026-07-16 21:49:22', NULL, '2026-07-14 22:17:47', '2026-07-16 21:49:22');
+(28, 'App\\Models\\User', 1, 'api-token', 'd4dd58ec3e9388e6849d268ebf4fee7faa54a2fc65636caadb80d4a754dd60be', '[\"*\"]', '2026-07-17 23:18:06', NULL, '2026-07-14 21:40:48', '2026-07-17 23:18:06'),
+(29, 'App\\Models\\User', 4, 'api-token', '32cc93b74602c63d3723b3fc54d04d18acff825f3962d969480362e91b10636c', '[\"*\"]', '2026-07-17 22:33:14', NULL, '2026-07-14 22:17:47', '2026-07-17 22:33:14'),
+(30, 'App\\Models\\User', 1, 'api-token', '7a85fed900ddc672445a47deda8dc5b00207c4bafdb1663ef0a93cf29c099298', '[\"*\"]', '2026-08-19 21:43:59', NULL, '2026-08-19 21:42:01', '2026-08-19 21:43:59');
 
 -- --------------------------------------------------------
 
@@ -1870,7 +1871,7 @@ ALTER TABLE `payment_methods`
 -- AUTO_INCREMENT de la tabla `personal_access_tokens`
 --
 ALTER TABLE `personal_access_tokens`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=30;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=31;
 
 --
 -- AUTO_INCREMENT de la tabla `products`
