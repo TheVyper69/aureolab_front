@@ -163,6 +163,55 @@ function buildOptions(arr, placeholder = '-- Selecciona --', labelFn = (x) => x.
   `;
 }
 
+const ADDITION_VALUES = Array.from({ length: 11 }, (_, i) => (1 + (i * 0.25)).toFixed(2));
+
+function buildAdditionOptions(selected = '') {
+  const current = selected === null || selected === undefined || selected === ''
+    ? ''
+    : Number(selected).toFixed(2);
+
+  return `
+    <option value="">-- Selecciona adición --</option>
+    ${ADDITION_VALUES.map(v => `
+      <option value="${v}" ${v === current ? 'selected' : ''}>${v}</option>
+    `).join('')}
+  `;
+}
+
+function lensTypeRequiresAddition(lt) {
+  if (!lt) return false;
+
+  const text = String(`${lt.code || ''} ${lt.name || ''}`)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return text.includes('FLAT TOP') ||
+    text.includes('FLATTOP') ||
+    text.includes('YOUNGER') ||
+    text.includes('PROGRESIVO') ||
+    text.includes('PROGRESSIVE');
+}
+
+function selectedLensTypeRequiresAddition(lensTypes = [], lensTypeId = '') {
+  const id = Number(lensTypeId || 0);
+  if (!id) return false;
+
+  const lt = (Array.isArray(lensTypes) ? lensTypes : []).find(x => Number(x.id || 0) === id);
+  return lensTypeRequiresAddition(lt);
+}
+
+function isValidAddition(value) {
+  if (value === null || value === undefined || value === '') return false;
+
+  const n = Number(value);
+  if (!Number.isFinite(n)) return false;
+
+  return ADDITION_VALUES.includes(n.toFixed(2));
+}
+
 function mountDataTable(selector) {
   if (!(window.$ && $.fn.dataTable)) return null;
 
@@ -256,6 +305,7 @@ function setFieldError(inputId, errorId, message = '') {
 function clearLensErrors() {
   setFieldError('cylinder', 'cylinderError', '');
   setFieldError('axis', 'axisError', '');
+  setFieldError('addition', 'additionError', '');
 }
 
 /* =========================
@@ -458,6 +508,7 @@ function normalizeInventoryRows(rows) {
         sphere: (p.sphere ?? null),
         cylinder: (p.cylinder ?? null),
         axis: (p.axis ?? null),
+        addition: (p.addition ?? null),
 
         treatments: normalizeTreatmentsArray(p.treatments ?? []),
 
@@ -950,6 +1001,15 @@ export async function renderInventory(outlet) {
                         </select>
                       </div>
 
+                      <div class="col-md-6 d-none" id="additionFieldWrap">
+                        <label class="form-label">Adición</label>
+                        <select class="form-select" id="addition">
+                          ${buildAdditionOptions()}
+                        </select>
+                        <span id="additionError" class="text-danger small d-none"></span>
+                        <div class="form-text">Solo aplica para Flat Top, Younger y Progresivos.</div>
+                      </div>
+
                       <div class="col-md-6">
                         <label class="form-label">Material</label>
                         <select class="form-select" id="material_id">
@@ -1365,6 +1425,8 @@ export async function renderInventory(outlet) {
     const bulkMicaSection = document.getElementById('bulkMicaSection');
     const singleOpticalFields = document.getElementById('singleOpticalFields');
     const axisFieldWrap = document.getElementById('axisFieldWrap');
+    const additionFieldWrap = document.getElementById('additionFieldWrap');
+    const additionEl = document.getElementById('addition');
 
     const sku = document.getElementById('sku');
     const name = document.getElementById('name');
@@ -1386,8 +1448,19 @@ export async function renderInventory(outlet) {
     const isLens = isLensLikeCategory(cat);
     const isCreating = !productId;
     const isBulkMica = isCreating && isMicas;
+    const needsAddition = isLens && selectedLensTypeRequiresAddition(lensTypes, document.getElementById('lens_type_id')?.value || '');
 
     lensSection.classList.toggle('d-none', !isLens);
+
+    if (additionFieldWrap && additionEl) {
+      additionFieldWrap.classList.toggle('d-none', !needsAddition);
+      additionEl.required = needsAddition;
+
+      if (!needsAddition) {
+        additionEl.value = '';
+        setFieldError('addition', 'additionError', '');
+      }
+    }
 
     if (treatmentsSection) {
       treatmentsSection.classList.toggle('d-none', !isMicas);
@@ -1454,7 +1527,7 @@ export async function renderInventory(outlet) {
     }
 
     if (!isLens) {
-      ['lens_type_id', 'material_id', 'supplier_id', 'box_id', 'sphere', 'cylinder', 'axis'].forEach(id => {
+      ['lens_type_id', 'material_id', 'supplier_id', 'box_id', 'sphere', 'cylinder', 'axis', 'addition'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
       });
@@ -1500,6 +1573,14 @@ export async function renderInventory(outlet) {
     document.getElementById('sphere').value = (p?.sphere ?? '');
     document.getElementById('cylinder').value = (p?.cylinder ?? '');
     document.getElementById('axis').value = (p?.axis ?? '');
+
+    const additionEl = document.getElementById('addition');
+    if (additionEl) {
+      additionEl.innerHTML = buildAdditionOptions(p?.addition ?? '');
+      additionEl.value = p?.addition !== null && p?.addition !== undefined && p?.addition !== ''
+        ? Number(p.addition).toFixed(2)
+        : '';
+    }
 
     const sMin = document.getElementById('sphere_min');
     const sMax = document.getElementById('sphere_max');
@@ -1547,6 +1628,10 @@ export async function renderInventory(outlet) {
     const btnAddTreatment = document.getElementById('btnAddTreatment');
 
     categoryEl?.addEventListener('change', toggleLensSection);
+    document.getElementById('lens_type_id')?.addEventListener('change', toggleLensSection);
+    document.getElementById('addition')?.addEventListener('change', () => {
+      setFieldError('addition', 'additionError', '');
+    });
 
     ['sphere_min', 'sphere_max', 'cylinder_max'].forEach(id => {
       document.getElementById(id)?.addEventListener('input', updateBulkMicaPreview);
@@ -1661,6 +1746,14 @@ export async function renderInventory(outlet) {
       const sphere = (document.getElementById('sphere').value === '' ? null : Number(document.getElementById('sphere').value));
       const cylinder = (document.getElementById('cylinder').value === '' ? null : Number(document.getElementById('cylinder').value));
       const axis = (document.getElementById('axis').value === '' ? null : Number(document.getElementById('axis').value));
+      const addition = (document.getElementById('addition')?.value === '' ? null : Number(document.getElementById('addition')?.value));
+
+      const needsAddition = selectedLensTypeRequiresAddition(lensTypes, lens_type_id);
+
+      if (needsAddition && !isValidAddition(addition)) {
+        setFieldError('addition', 'additionError', 'Selecciona una adición entre 1.00 y 3.50.');
+        return;
+      }
 
       if (isBulkMica) {
         const sphereMin = document.getElementById('sphere_min').value === '' ? null : Number(document.getElementById('sphere_min').value);
@@ -1753,6 +1846,7 @@ export async function renderInventory(outlet) {
         appendIfNotNull(formData, 'box_id', box_id);
         appendIfNotNull(formData, 'lens_type_id', lens_type_id);
         appendIfNotNull(formData, 'material_id', material_id);
+        appendIfNotNull(formData, 'addition', needsAddition ? addition : null);
 
         formData.append('sphere_min', document.getElementById('sphere_min').value);
         formData.append('sphere_max', document.getElementById('sphere_max').value);
@@ -1780,6 +1874,7 @@ export async function renderInventory(outlet) {
         appendIfNotNull(formData, 'material_id', material_id);
         appendIfNotNull(formData, 'sphere', sphere);
         appendIfNotNull(formData, 'cylinder', cylinder);
+        appendIfNotNull(formData, 'addition', needsAddition ? addition : null);
 
         if (!isMicas) {
                     appendIfNotNull(formData, 'axis', axis);

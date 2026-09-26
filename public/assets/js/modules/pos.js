@@ -203,6 +203,55 @@ export async function renderPOS(outlet) {
       .join(',');
   };
 
+  const ADDITION_VALUES = Array.from({ length: 11 }, (_, i) => (1 + (i * 0.25)).toFixed(2));
+
+  const buildAdditionOptions = (selected = '') => {
+    const current = selected === null || selected === undefined || selected === ''
+      ? ''
+      : Number(selected).toFixed(2);
+
+    return `
+      <option value="">Selecciona adición</option>
+      ${ADDITION_VALUES.map(v => `
+        <option value="${v}" ${v === current ? 'selected' : ''}>${v}</option>
+      `).join('')}
+    `;
+  };
+
+  const lensTypeRequiresAddition = (lt) => {
+    if (!lt) return false;
+
+    const text = String(`${lt.code || ''} ${lt.name || ''}`)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return text.includes('FLAT TOP') ||
+      text.includes('FLATTOP') ||
+      text.includes('YOUNGER') ||
+      text.includes('PROGRESIVO') ||
+      text.includes('PROGRESIVOS') ||
+      text.includes('PROGRESSIVE');
+  };
+
+  const selectedLensTypeRequiresAddition = (lensTypeId) => {
+    const id = Number(lensTypeId || 0);
+    if (!id) return false;
+
+    return lensTypeRequiresAddition((lensTypesCatalog || []).find(x => Number(x.id || 0) === id));
+  };
+
+  const isValidAddition = (value) => {
+    if (value === null || value === undefined || value === '') return false;
+
+    const n = Number(value);
+    if (!Number.isFinite(n)) return false;
+
+    return ADDITION_VALUES.includes(n.toFixed(2));
+  };
+
   const normalizeInventoryRows = (arr) => {
     const rows = Array.isArray(arr) ? arr : [];
 
@@ -299,6 +348,7 @@ export async function renderPOS(outlet) {
     if (!isMica || cylinder === null || cylinder >= 0) {
       return null;
     }
+
 
     const result = await Swal.fire({
       title: 'Capturar eje',
@@ -447,6 +497,10 @@ export async function renderPOS(outlet) {
       parts.push(`Eje: ${axis}`);
     }
 
+    if (it?.addition !== null && it?.addition !== undefined && String(it.addition).trim() !== '') {
+      parts.push(`Adición: ${Number(it.addition).toFixed(2)}`);
+    }
+
     return parts.length ? parts.join(' · ') : '—';
   };
 
@@ -461,6 +515,7 @@ export async function renderPOS(outlet) {
           sphere: itemLike.sphere ?? '',
           cylinder: itemLike.cylinder ?? '',
           axis: itemLike.axis ?? '',
+          addition: itemLike.addition ?? '',
           lens_type_id: itemLike.lens_type_id ?? '',
           frame_height: itemLike.frame_height ?? '',
           blank_height: itemLike.blank_height ?? '',
@@ -1146,6 +1201,11 @@ export async function renderPOS(outlet) {
                 ? `· Eje: <b>${safe(p.axis)}</b>`
                 : ''
             }
+            ${
+              p.addition !== null && p.addition !== undefined && String(p.addition).trim() !== ''
+                ? `· Adición: <b>${safe(Number(p.addition).toFixed(2))}</b>`
+                : ''
+            }
           </div>
         </div>
       </div>
@@ -1229,6 +1289,7 @@ export async function renderPOS(outlet) {
       <div class="mt-1 border rounded p-2 bg-light">
         <div><b>Refracción:</b> ${safe(formatCustomRefractionText(it))}</div>
         <div><b>Tipo de lente:</b> ${safe(it.lens_type_name || '—')}</div>
+        <div><b>Adición:</b> ${it.addition !== null && it.addition !== undefined && String(it.addition).trim() !== '' ? safe(Number(it.addition).toFixed(2)) : '—'}</div>
         <div><b>Altura de armazón:</b> ${safe(it.frame_height ?? '—')}</div>
         <div><b>Altura de oblea:</b> ${safe(it.blank_height ?? '—')}</div>
         <div><b>Tratamientos:</b> ${safe(treatmentText || '—')}</div>
@@ -1438,6 +1499,14 @@ export async function renderPOS(outlet) {
           </select>
         </div>
 
+        <div class="mb-3 d-none" id="customBiselAdditionWrap">
+          <label class="form-label">Adición</label>
+          <select id="customBiselAddition" class="form-select">
+            ${buildAdditionOptions()}
+          </select>
+          <div class="form-text">Obligatoria para Flat Top, Younger y Progresivos.</div>
+        </div>
+
         <div class="mb-3">
           <label class="form-label">Altura de armazón</label>
           <input id="customBiselFrameHeight" type="number" min="0" step="0.01" class="form-control" placeholder="Ej. 50" />
@@ -1550,6 +1619,22 @@ export async function renderPOS(outlet) {
       axisInput.disabled = false;
     };
 
+    const syncAdditionState = () => {
+      const lensTypeId = Number(document.getElementById('customBiselLensType')?.value || 0);
+      const wrap = document.getElementById('customBiselAdditionWrap');
+      const select = document.getElementById('customBiselAddition');
+      const needsAddition = selectedLensTypeRequiresAddition(lensTypeId);
+
+      if (!wrap || !select) return;
+
+      wrap.classList.toggle('d-none', !needsAddition);
+      select.required = needsAddition;
+
+      if (!needsAddition) {
+        select.value = '';
+      }
+    };
+
     const result = await Swal.fire({
       title: 'Ordenar biselado personalizado',
       html,
@@ -1563,6 +1648,7 @@ export async function renderPOS(outlet) {
         const box = document.getElementById('customBiselTreatmentsBox');
         const frameInput = document.getElementById('customBiselFrameHeight');
         const cylinderInput = document.getElementById('customBiselCylinder');
+        const lensTypeInput = document.getElementById('customBiselLensType');
 
         addBtn?.addEventListener('click', () => {
           const wrapper = document.createElement('div');
@@ -1578,11 +1664,13 @@ export async function renderPOS(outlet) {
 
         frameInput?.addEventListener('input', recalcBlankHeight);
         cylinderInput?.addEventListener('input', syncAxisState);
+        lensTypeInput?.addEventListener('change', syncAdditionState);
 
         bindCustomTreatmentEvents();
         refreshCustomTreatmentOptions();
         recalcBlankHeight();
         syncAxisState();
+        syncAdditionState();
       },
       preConfirm: () => {
         const sphereRaw = String(document.getElementById('customBiselSphere')?.value || '').trim();
@@ -1590,6 +1678,7 @@ export async function renderPOS(outlet) {
         const axisRaw = String(document.getElementById('customBiselAxis')?.value || '').trim();
 
         const lensTypeId = Number(document.getElementById('customBiselLensType')?.value || 0);
+        const additionRaw = String(document.getElementById('customBiselAddition')?.value || '').trim();
         const frameHeight = Number(document.getElementById('customBiselFrameHeight')?.value || 0);
         const observations = String(document.getElementById('customBiselObservations')?.value || '').trim();
 
@@ -1644,6 +1733,14 @@ export async function renderPOS(outlet) {
           return false;
         }
 
+        const needsAddition = selectedLensTypeRequiresAddition(lensTypeId);
+        const addition = additionRaw === '' ? null : Number(additionRaw);
+
+        if (needsAddition && !isValidAddition(addition)) {
+          Swal.showValidationMessage('Debes seleccionar una adición entre 1.00 y 3.50.');
+          return false;
+        }
+
         if (!frameHeight || Number.isNaN(frameHeight) || frameHeight <= 0) {
           Swal.showValidationMessage('La altura de armazón debe ser mayor a 0.');
           return false;
@@ -1683,6 +1780,7 @@ export async function renderPOS(outlet) {
           reflection: refractionText,
           lens_type_id: lensTypeId,
           lens_type_name: lensType?.name || lensType?.code || `Tipo ${lensTypeId}`,
+          addition: needsAddition ? addition : null,
           frame_height: frameHeight,
           blank_height: blankHeight,
           observations,
@@ -1712,6 +1810,7 @@ export async function renderPOS(outlet) {
 
       lens_type_id: cfg.lens_type_id,
       lens_type_name: cfg.lens_type_name,
+      addition: cfg.addition ?? null,
 
       frame_height: cfg.frame_height,
       blank_height: cfg.blank_height,
@@ -2114,6 +2213,7 @@ export async function renderPOS(outlet) {
           axis: it.axis !== null && it.axis !== undefined ? Number(it.axis) : null,
 
           lens_type_id: it.lens_type_id ? Number(it.lens_type_id) : null,
+          addition: it.addition !== null && it.addition !== undefined && String(it.addition).trim() !== '' ? Number(it.addition) : null,
 
           frame_height: it.frame_height !== null && it.frame_height !== undefined ? Number(it.frame_height) : null,
           blank_height: it.blank_height !== null && it.blank_height !== undefined ? Number(it.blank_height) : null,

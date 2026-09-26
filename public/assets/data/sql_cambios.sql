@@ -29,3 +29,9 @@ MODIFY process_status ENUM(
   'revision',
   'cancelado'
 ) NOT NULL DEFAULT 'recibido';
+
+ALTER TABLE products
+ADD COLUMN addition DECIMAL(4,2) NULL AFTER axis;
+
+ALTER TABLE order_item_custom_bisel
+ADD COLUMN addition DECIMAL(4,2) NULL AFTER lens_type_id;
